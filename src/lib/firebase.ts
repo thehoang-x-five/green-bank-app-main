@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBaBxbCTIyyQ66zaYxlyrlDWMUSR0XVyuk",
@@ -25,3 +26,9 @@ const app = initializeApp(firebaseConfig);
 export const firebaseAuth: Auth = getAuth(app);
 export const firebaseDb = getFirestore(app);
 export const firebaseRtdb = getDatabase(app);
+export const firebaseFns = getFunctions(app, "asia-southeast1");
+
+// Dev-only: dùng emulator Functions nếu đặt biến môi trường VITE_USE_FUNCTIONS_EMULATOR=true
+if (import.meta.env?.DEV && import.meta.env?.VITE_USE_FUNCTIONS_EMULATOR === "true") {
+  connectFunctionsEmulator(firebaseFns, "localhost", 5001);
+}
