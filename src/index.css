@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 160 20% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 160 20% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 20% 15%;
+
+    /* Dark forest green - main brand color */
+    --primary: 160 75% 22%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Lighter green for secondary actions */
+    --secondary: 160 45% 45%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted backgrounds */
+    --muted: 160 10% 95%;
+    --muted-foreground: 160 10% 40%;
+
+    /* Accent green */
+    --accent: 160 60% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 160 15% 88%;
+    --input: 160 15% 90%;
+    --ring: 160 75% 22%;
+
+    --radius: 0.75rem;
+
+    /* Banking-specific colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(160 75% 22%) 0%, hsl(160 65% 30%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(160 75% 22%) 0%, hsl(160 70% 25%) 100%);
+    --gradient-light: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(160 10% 98%) 100%);
+
+    /* Shadows */
+    --shadow-card: 0 4px 12px hsla(160 75% 22% / 0.08);
+    --shadow-elevated: 0 8px 24px hsla(160 75% 22% / 0.12);
+    
+    /* Transitions */
+    --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
