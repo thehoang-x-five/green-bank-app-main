@@ -20,6 +20,9 @@ type UtilityResultState = {
   }[];
 };
 
+// ✅ [PATCH] thêm source để biết back về đâu
+type ReceiptSource = "home" | "mobilePhone";
+
 const flowLabelMap: Record<UtilityFlow, string> = {
   bill: "Thanh toán hóa đơn",
   phone: "Nạp tiền điện thoại",
@@ -31,8 +34,10 @@ const flowLabelMap: Record<UtilityFlow, string> = {
 
 const UtilityReceipt = () => {
   const navigate = useNavigate();
+
+  // ✅ [PATCH] đọc thêm source từ state
   const location = useLocation() as {
-    state?: { result?: UtilityResultState };
+    state?: { result?: UtilityResultState; source?: ReceiptSource };
   };
 
   const now = new Date();
@@ -52,6 +57,9 @@ const UtilityReceipt = () => {
   const data = location.state?.result ?? defaultResult;
   const flowLabel = flowLabelMap[data.flow];
 
+  // ✅ [PATCH] mặc định an toàn: nếu thiếu source thì coi như từ home
+  const source: ReceiptSource = location.state?.source ?? "home";
+
   const handleDownload = () => {
     toast.success("Đã tải xuống biên lai giao dịch (demo)");
   };
@@ -60,13 +68,28 @@ const UtilityReceipt = () => {
     toast.success("Đang chia sẻ biên lai giao dịch (demo)");
   };
 
+  const handleBack = () => {
+    // ✅ [PATCH] chỉ phone/data mới cần phân biệt nguồn
+    if (data.flow === "phone" || data.flow === "data") {
+      if (source === "mobilePhone") {
+        navigate("/utilities/mobilePhone");
+      } else {
+        navigate("/home");
+      }
+      return;
+    }
+
+    // giữ nguyên logic cũ cho các flow khác
+    navigate("/home");
+  };
+
   return (
     <div className="min-h-screen bg-background pb-16">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
