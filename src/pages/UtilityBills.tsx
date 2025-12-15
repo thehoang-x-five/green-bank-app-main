@@ -1,7 +1,16 @@
 // src/pages/UtilityBills.tsx
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  BedDouble,
+  CheckCircle2,
+  Clapperboard,
+  CreditCard,
+  MapPin,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -21,7 +30,6 @@ import {
   buildPhoneReceipt,
 } from "./utilities/buildReceipt";
 
-// pages
 import UtilityBill from "./utilities/UtilityBill";
 import UtilityMobilePhone from "./utilities/UtilityMobilePhone";
 import UtilityPhoneTopup from "./utilities/UtilityPhoneTopup";
@@ -30,7 +38,6 @@ import UtilityFlight from "./utilities/UtilityFlight";
 import UtilityMovie from "./utilities/UtilityMovie";
 import UtilityHotel from "./utilities/UtilityHotel";
 
-// ✅ [PATCH] thêm type để UtilityReceipt biết back về đâu
 type ReceiptSource = "home" | "mobilePhone";
 
 const headerConfig: Record<
@@ -90,6 +97,8 @@ const UtilityBills = () => {
   const location = useLocation();
   const currentType: UtilityType = type ?? "bill";
   const fromPage: string | null = (location.state as any)?.from ?? null;
+  const isMovieFlow = currentType === "movie";
+  const isHotelFlow = currentType === "hotel";
 
   const { title, subtitle, successMsg } = headerConfig[currentType];
 
@@ -129,12 +138,20 @@ const UtilityBills = () => {
     hotelRooms: "1",
   });
 
-  // bill-only UI states
+  const [showMovieErrors, setShowMovieErrors] = useState(false);
+  const [showHotelErrors, setShowHotelErrors] = useState(false);
+
   const [billService, setBillService] = useState<BillService | null>(null);
   const [billSave, setBillSave] = useState(false);
 
-  // flight selected (receipt build)
   const [selectedFlight, setSelectedFlight] = useState<any>(null);
+  const [movieStep, setMovieStep] = useState<1 | 2 | 3>(1);
+  const [hotelStep, setHotelStep] = useState<1 | 2 | 3>(1);
+  const [selectedHotelRoom, setSelectedHotelRoom] = useState<{
+    name: string;
+    price: number;
+    perks: string[];
+  } | null>(null);
 
   const isBillDetail = currentType === "bill" && billService !== null;
 
@@ -162,16 +179,74 @@ const UtilityBills = () => {
     navigate("/home");
   };
 
-  // ✅ [PATCH] source quyết định nút back ở Receipt sẽ về đâu
   const receiptSource: ReceiptSource =
     fromPage === "mobilePhone" ? "mobilePhone" : "home";
+
+  const movieTickets = Math.min(
+    10,
+    Math.max(1, Number(formData.movieTickets || "1") || 1)
+  );
+  const isMovieReady =
+    formData.movieCinema &&
+    formData.movieName &&
+    formData.movieDate &&
+    formData.movieTime;
+  const movieEstimate = (100000 * movieTickets).toLocaleString("vi-VN");
+
+  useEffect(() => {
+    if (!isMovieFlow) setShowMovieErrors(false);
+  }, [isMovieFlow]);
+
+  useEffect(() => {
+    if (!isHotelFlow) {
+      setShowHotelErrors(false);
+      setHotelStep(1);
+      setSelectedHotelRoom(null);
+    }
+  }, [isHotelFlow]);
+
+  useEffect(() => {
+    if (!isMovieFlow || showMovieErrors) return;
+    if (
+      formData.movieCinema ||
+      formData.movieName ||
+      formData.movieDate ||
+      formData.movieTime
+    ) {
+      setShowMovieErrors(true);
+    }
+  }, [
+    formData.movieCinema,
+    formData.movieDate,
+    formData.movieName,
+    formData.movieTime,
+    isMovieFlow,
+    showMovieErrors,
+  ]);
+
+  const hotelRoomsCount = Math.max(1, Number(formData.hotelRooms || "1") || 1);
+  const hotelNights = (() => {
+    if (!formData.hotelCheckIn || !formData.hotelCheckOut) return 0;
+    const start = new Date(formData.hotelCheckIn).getTime();
+    const end = new Date(formData.hotelCheckOut).getTime();
+    const diff = Math.round((end - start) / (1000 * 60 * 60 * 24));
+    return diff > 0 ? diff : 0;
+  })();
+  const hotelReady =
+    formData.hotelCity && formData.hotelCheckIn && formData.hotelCheckOut;
+  const hotelRoomRate = selectedHotelRoom?.price ?? 850000;
+  const hotelEstimate = (
+    hotelRoomRate *
+    hotelRoomsCount *
+    (hotelNights || 1)
+  ).toLocaleString("vi-VN");
+  const hotelGuestSummary = `${formData.hotelGuests || "1"} khách · ${hotelRoomsCount} phòng`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (currentType === "flight") return; // flight tự confirm riêng
+    if (currentType === "flight") return;
 
-    // validate theo tiện ích
     if (currentType === "bill") {
       if (!billService || !formData.billProvider || !formData.customerCode) {
         toast.error(
@@ -181,23 +256,25 @@ const UtilityBills = () => {
       }
       const result = buildBillReceipt({ billService, billSave, formData });
       toast.success(successMsg);
-      // ✅ [PATCH] truyền source
       navigate("/utilities/result", { state: { result, source: "home" } });
       return;
     }
 
     if (currentType === "phone") {
       if (!formData.phoneNumber || !formData.telco || !formData.topupAmount) {
-        toast.error("Vui lòng nhập số điện thoại, nhà mạng và số tiền nạp");
+        toast.error(
+          "Vui lòng nhập số điện thoại, nhà mạng và số tiền nạp"
+        );
         return;
       }
       if (!validatePhoneNumber(formData.phoneNumber)) {
-        toast.error("Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0");
+        toast.error(
+          "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0"
+        );
         return;
       }
       const result = buildPhoneReceipt(formData);
       toast.success(successMsg);
-      // ✅ [PATCH] nếu đi từ Trang chủ -> source=home; nếu đi từ MobilePhone -> source=mobilePhone
       navigate("/utilities/result", {
         state: { result, source: receiptSource },
       });
@@ -206,16 +283,19 @@ const UtilityBills = () => {
 
     if (currentType === "data") {
       if (!formData.dataPhone || !formData.dataTelco || !formData.dataPack) {
-        toast.error("Vui lòng nhập số điện thoại, nhà mạng và gói data");
+        toast.error(
+          "Vui lòng nhập số điện thoại, nhà mạng và gói data"
+        );
         return;
       }
       if (!validatePhoneNumber(formData.dataPhone)) {
-        toast.error("Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0");
+        toast.error(
+          "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0"
+        );
         return;
       }
       const result = buildDataReceipt(formData);
       toast.success(successMsg);
-      // ✅ [PATCH] source đúng theo nơi khởi tạo
       navigate("/utilities/result", {
         state: { result, source: receiptSource },
       });
@@ -223,6 +303,7 @@ const UtilityBills = () => {
     }
 
     if (currentType === "movie") {
+      setShowMovieErrors(true);
       if (
         !formData.movieCinema ||
         !formData.movieName ||
@@ -232,26 +313,21 @@ const UtilityBills = () => {
         toast.error("Vui lòng nhập đầy đủ thông tin vé xem phim");
         return;
       }
-      const result = buildMovieReceipt(formData);
-      toast.success(successMsg);
-      // ✅ [PATCH] movie thường từ Trang chủ
-      navigate("/utilities/result", { state: { result, source: "home" } });
+      setMovieStep(2);
       return;
     }
 
     if (currentType === "hotel") {
+      setShowHotelErrors(true);
       if (
         !formData.hotelCity ||
         !formData.hotelCheckIn ||
         !formData.hotelCheckOut
       ) {
-        toast.error("Vui lòng nhập thành phố và ngày nhận/trả phòng");
+        toast.error("Vui lòng nhập đủ thành phố và ngày nhận / trả phòng");
         return;
       }
-      const result = buildHotelReceipt(formData);
-      toast.success(successMsg);
-      // ✅ [PATCH] hotel thường từ Trang chủ
-      navigate("/utilities/result", { state: { result, source: "home" } });
+      setHotelStep(2);
       return;
     }
 
@@ -303,7 +379,6 @@ const UtilityBills = () => {
                 formData,
               });
               toast.success("Đặt vé máy bay (demo) thành công!");
-              // ✅ [PATCH] flight thường từ Trang chủ
               navigate("/utilities/result", {
                 state: { result, source: "home" },
               });
@@ -311,9 +386,21 @@ const UtilityBills = () => {
           />
         );
       case "movie":
-        return <UtilityMovie formData={formData} setFormData={setFormData} />;
+        return (
+          <UtilityMovie
+            formData={formData}
+            setFormData={setFormData}
+            showErrors={showMovieErrors}
+          />
+        );
       case "hotel":
-        return <UtilityHotel formData={formData} setFormData={setFormData} />;
+        return (
+          <UtilityHotel
+            formData={formData}
+            setFormData={setFormData}
+            showErrors={showHotelErrors}
+          />
+        );
       default:
         return (
           <p className="text-sm text-muted-foreground">
@@ -322,9 +409,16 @@ const UtilityBills = () => {
           </p>
         );
     }
-  }, [currentType, formData, billService, billSave, navigate]);
+  }, [
+    currentType,
+    formData,
+    billService,
+    billSave,
+    navigate,
+    showMovieErrors,
+    showHotelErrors,
+  ]);
 
-  // BILL DETAIL special header (giữ đúng UI như anh)
   if (isBillDetail) {
     const label =
       billService === "electric"
@@ -363,6 +457,573 @@ const UtilityBills = () => {
               {content}
             </form>
           </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (isMovieFlow) {
+    const formId = "movie-ticket-form";
+    const movieSteps = [
+      { label: "Thông tin vé", icon: Clapperboard, step: 1 },
+      { label: "Xác nhận", icon: CheckCircle2, step: 2 },
+      { label: "Thanh toán", icon: CreditCard, step: 3 },
+    ];
+
+    const isStep1 = movieStep === 1;
+    const isStep2 = movieStep === 2;
+
+    const handleMoviePay = () => {
+      const result = buildMovieReceipt(formData);
+      toast.success(headerConfig.movie.successMsg);
+      setMovieStep(3);
+      navigate("/utilities/result", { state: { result, source: "home" } });
+    };
+
+    return (
+      <div className="min-h-screen bg-background pb-12">
+        <header className="bg-gradient-to-br from-primary to-accent p-6 pb-6">
+          <div className="flex w-full flex-col gap-4 px-2 md:flex-row md:items-center md:gap-6 md:px-6 lg:px-10">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleHeaderBack}
+                className="rounded-full border border-white/30 bg-white/10 p-2 text-primary-foreground shadow-sm transition hover:bg-white/20"
+              >
+                <ArrowLeft size={22} />
+              </button>
+              <div className="leading-tight">
+                <p className="text-xs text-primary-foreground/80">
+                  Tiện ích – Thanh toán dịch vụ
+                </p>
+                <h1 className="text-xl font-semibold text-primary-foreground">
+                  Đặt vé xem phim
+                </h1>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="w-full px-4 pb-8 md:px-6 lg:px-10 -mt-4">
+          <div className="mx-auto w-full max-w-5xl">
+            <Card className="overflow-hidden border-emerald-100 shadow-lg">
+              <div className="bg-gradient-to-r from-primary to-accent px-4 py-4 text-primary-foreground">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs opacity-80">Bước {movieStep} / 3</p>
+                    <h2 className="text-lg font-semibold">Quy trình đặt vé</h2>
+                  </div>
+                  <Badge className="border-white/40 bg-white/15 text-primary-foreground">
+                    An toàn
+                  </Badge>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                  {movieSteps.map(({ label, icon: Icon, step }, index) => {
+                    const isLast = index === movieSteps.length - 1;
+                    const active = movieStep >= step;
+                    return (
+                      <div key={label} className="flex flex-1 items-center gap-3">
+                        <div
+                          className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${
+                            active
+                              ? "border-white bg-emerald-600 text-white"
+                              : "border-white/60 bg-white/30 text-primary-foreground/80"
+                          }`}
+                        >
+                          <Icon size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-primary-foreground/80">
+                            Bước {step}
+                          </p>
+                          <p className="text-sm font-semibold text-primary-foreground">
+                            {label}
+                          </p>
+                        </div>
+                        {!isLast && (
+                          <div className="hidden h-px flex-1 bg-gradient-to-r from-white/30 via-white/60 to-white/30 md:block" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-white p-5 md:p-6">
+                {isStep1 && (
+                  <form id={formId} onSubmit={handleSubmit}>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 1 · Thông tin vé
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Chọn rạp, phim và suất chiếu
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Nhập nhanh
+                      </Badge>
+                    </div>
+                    <UtilityMovie
+                      formData={formData}
+                      setFormData={setFormData}
+                      showErrors={showMovieErrors}
+                    />
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        form={formId}
+                        type="submit"
+                        size="lg"
+                        className="px-8"
+                        disabled={!isMovieReady}
+                      >
+                        Tiếp tục
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {isStep2 && (
+                  <div className="space-y-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 2 · Xác nhận
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Kiểm tra thông tin vé
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Xác nhận
+                      </Badge>
+                    </div>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                        <span className="text-muted-foreground">Phim</span>
+                        <span className="font-medium text-foreground">
+                          {formData.movieName || "Chưa chọn"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                        <span className="text-muted-foreground">Rạp chiếu</span>
+                        <span className="font-medium text-foreground">
+                          {formData.movieCinema || "Chưa chọn"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                        <span className="text-muted-foreground">Ngày · Giờ</span>
+                        <span className="font-medium text-foreground">
+                          {formData.movieDate || "--/--"} · {formData.movieTime || "--:--"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                        <span className="text-muted-foreground">Số vé</span>
+                        <span className="font-semibold text-foreground">
+                          {movieTickets} vé · {movieEstimate} VND
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-w-[140px]"
+                        type="button"
+                        onClick={() => setMovieStep(1)}
+                      >
+                        Quay lại bước 1
+                      </Button>
+                      <Button
+                        className="flex-1 min-w-[180px]"
+                        type="button"
+                        onClick={() => setMovieStep(3)}
+                      >
+                        Sang bước 3
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {movieStep === 3 && (
+                  <div className="space-y-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 3 · Thanh toán
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Chọn phương thức thanh toán
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Thanh toán
+                      </Badge>
+                    </div>
+                    <div className="space-y-3 rounded-xl border border-muted bg-muted/30 p-4 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Tài khoản nguồn</span>
+                        <span className="font-semibold text-foreground">559 807 ₫</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Phí giao dịch</span>
+                        <span className="font-semibold text-foreground">0 ₫</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Tổng thanh toán</span>
+                        <span className="text-lg font-bold text-emerald-700">
+                          {movieEstimate} VND
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-w-[140px]"
+                        type="button"
+                        onClick={() => setMovieStep(2)}
+                      >
+                        Quay lại bước 2
+                      </Button>
+                      <Button
+                        className="flex-1 min-w-[180px]"
+                        type="button"
+                        onClick={handleMoviePay}
+                      >
+                        Thanh toán và xem biên lai
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isHotelFlow) {
+    const formId = "hotel-booking-form";
+    const hotelSteps = [
+      { label: "Tìm phòng", icon: MapPin, step: 1 },
+      { label: "Chọn phòng", icon: BedDouble, step: 2 },
+      { label: "Xác nhận & thanh toán", icon: CreditCard, step: 3 },
+    ];
+
+    const roomOptions = [
+      {
+        name: "Phòng tiêu chuẩn",
+        price: 850000,
+        perks: ["Miễn phí Wi-Fi", "Hủy miễn phí 24h", "Bao gồm bữa sáng"],
+      },
+      {
+        name: "Deluxe City View",
+        price: 1150000,
+        perks: ["View thành phố", "Nhận phòng sớm", "Được nâng hạng khi còn phòng"],
+      },
+      {
+        name: "Suite Executive",
+        price: 1550000,
+        perks: ["Late checkout", "Mini bar miễn phí", "Ưu tiên đỗ xe"],
+      },
+    ];
+
+    const isStep1 = hotelStep === 1;
+    const isStep2 = hotelStep === 2;
+    const hasSelection = !!selectedHotelRoom;
+    const selectedRoom = selectedHotelRoom || roomOptions[0];
+
+    const handleHotelPay = () => {
+      const room = selectedHotelRoom || roomOptions[0];
+      const result = buildHotelReceipt(formData, {
+        nights: hotelNights || 1,
+        roomName: room?.name ?? "Phòng tiêu chuẩn",
+        nightlyRate: room?.price ?? 850000,
+      });
+      toast.success(headerConfig.hotel.successMsg);
+      setHotelStep(3);
+      navigate("/utilities/result", { state: { result, source: "home" } });
+    };
+
+    return (
+      <div className="min-h-screen bg-background pb-12">
+        <header className="bg-gradient-to-br from-primary to-accent p-6 pb-6">
+          <div className="flex w-full flex-col gap-4 px-2 md:flex-row md:items-center md:gap-6 md:px-6 lg:px-10">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleHeaderBack}
+                className="rounded-full border border-white/30 bg-white/10 p-2 text-primary-foreground shadow-sm transition hover:bg-white/20"
+              >
+                <ArrowLeft size={22} />
+              </button>
+              <div className="leading-tight">
+                <p className="text-xs text-primary-foreground/80">
+                  Tiện ích – Du lịch & nghỉ dưỡng
+                </p>
+                <h1 className="text-xl font-semibold text-primary-foreground">
+                  Đặt phòng khách sạn
+                </h1>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="w-full px-4 pb-8 md:px-6 lg:px-10 -mt-4">
+          <div className="mx-auto w-full max-w-5xl">
+            <Card className="overflow-hidden border-emerald-100 shadow-lg">
+              <div className="bg-gradient-to-r from-primary to-accent px-4 py-4 text-primary-foreground">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs opacity-80">Bước {hotelStep} / 3</p>
+                    <h2 className="text-lg font-semibold">Quy trình đặt phòng</h2>
+                  </div>
+                  <Badge className="border-white/40 bg-white/15 text-primary-foreground">
+                    An toàn
+                  </Badge>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                  {hotelSteps.map(({ label, icon: Icon, step }, index) => {
+                    const isLast = index === hotelSteps.length - 1;
+                    const active = hotelStep >= step;
+                    return (
+                      <div key={label} className="flex flex-1 items-center gap-3">
+                        <div
+                          className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${
+                            active
+                              ? "border-white bg-emerald-600 text-white"
+                              : "border-white/60 bg-white/30 text-primary-foreground/80"
+                          }`}
+                        >
+                          <Icon size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-primary-foreground/80">
+                            Bước {step}
+                          </p>
+                          <p className="text-sm font-semibold text-primary-foreground">
+                            {label}
+                          </p>
+                        </div>
+                        {!isLast && (
+                          <div className="hidden h-px flex-1 bg-gradient-to-r from-white/30 via-white/60 to-white/30 md:block" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-white p-5 md:p-6">
+                {isStep1 && (
+                  <form id={formId} onSubmit={handleSubmit} className="space-y-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 1 · Tìm phòng
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Nhập điểm đến, ngày ở và số khách
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Tìm nhanh
+                      </Badge>
+                    </div>
+                    <UtilityHotel
+                      formData={formData}
+                      setFormData={setFormData}
+                      showErrors={showHotelErrors}
+                    />
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        form={formId}
+                        type="submit"
+                        size="lg"
+                        className="w-full sm:w-auto px-8"
+                        disabled={!hotelReady}
+                      >
+                        Tiếp tục
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {isStep2 && (
+                  <div className="space-y-4">
+                    <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 2 · Chọn phòng
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Lựa chọn hạng phòng phù hợp
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Tối đa 5 phòng
+                      </Badge>
+                    </div>
+                    <div className="grid gap-3 rounded-xl border border-muted/60 bg-muted/40 p-4 text-sm md:grid-cols-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="text-emerald-700" />
+                        <span className="text-muted-foreground">
+                          {formData.hotelCity || "Chưa chọn điểm đến"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} className="text-emerald-700" />
+                        <span className="text-muted-foreground">
+                          {formData.hotelCheckIn || "--/--"} →{" "}
+                          {formData.hotelCheckOut || "--/--"} ({hotelNights || 1} đêm)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <BedDouble size={16} className="text-emerald-700" />
+                        <span className="text-muted-foreground">{hotelGuestSummary}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CreditCard size={16} className="text-emerald-700" />
+                        <span className="text-muted-foreground">Ước tính: {hotelEstimate} VND</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {roomOptions.map((room) => {
+                        const active = selectedHotelRoom?.name === room.name;
+                        return (
+                          <button
+                            key={room.name}
+                            type="button"
+                            onClick={() => setSelectedHotelRoom(room)}
+                            className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
+                              active
+                                ? "border-emerald-500 bg-emerald-50"
+                                : "border-muted bg-white hover:border-emerald-200"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-base font-semibold text-foreground">{room.name}</p>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {room.perks.map((perk) => (
+                                    <Badge
+                                      key={perk}
+                                      variant="secondary"
+                                      className="border-emerald-100 bg-emerald-50 text-emerald-700"
+                                    >
+                                      {perk}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold text-emerald-700">
+                                  {room.price.toLocaleString("vi-VN")} đ/đêm
+                                </p>
+                                <p className="text-xs text-muted-foreground">Đặt linh hoạt</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-w-[140px]"
+                        type="button"
+                        onClick={() => setHotelStep(1)}
+                      >
+                        Quay lại bước 1
+                      </Button>
+                      <Button
+                        className="flex-1 min-w-[180px]"
+                        type="button"
+                        onClick={() => setHotelStep(3)}
+                        disabled={!hasSelection}
+                      >
+                        Sang bước 3
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {hotelStep === 3 && (
+                  <div className="space-y-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Bước 3 · Xác nhận & thanh toán
+                        </p>
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Kiểm tra thông tin đặt phòng
+                        </h2>
+                      </div>
+                      <Badge className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                        Bảo mật
+                      </Badge>
+                    </div>
+                    <div className="space-y-2 rounded-xl border border-muted bg-muted/30 p-4 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Điểm đến</span>
+                        <span className="font-semibold text-foreground">{formData.hotelCity}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Ngày ở</span>
+                        <span className="font-semibold text-foreground">
+                          {formData.hotelCheckIn} → {formData.hotelCheckOut} ({hotelNights || 1} đêm)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Hạng phòng</span>
+                        <span className="font-semibold text-foreground">{selectedRoom.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Khách & phòng</span>
+                        <span className="font-semibold text-foreground">{hotelGuestSummary}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Tổng thanh toán</span>
+                        <span className="text-lg font-bold text-emerald-700">{hotelEstimate} VND</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 rounded-xl border border-muted bg-white p-4 shadow-sm text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Tài khoản nguồn</span>
+                        <span className="font-semibold text-foreground">559 807 ₫</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Phí giao dịch</span>
+                        <span className="font-semibold text-foreground">0 ₫</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-w-[140px]"
+                        type="button"
+                        onClick={() => setHotelStep(2)}
+                      >
+                        Quay lại bước 2
+                      </Button>
+                      <Button
+                        className="flex-1 min-w-[180px]"
+                        type="button"
+                        onClick={handleHotelPay}
+                      >
+                        Thanh toán và xem biên lai
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     );

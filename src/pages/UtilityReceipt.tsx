@@ -1,26 +1,12 @@
-// src/pages/UtilityReceipt.tsx
-import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, CheckCircle2, Download, Share2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { ArrowLeft, CheckCircle2, Download, Share2, Ticket } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-type UtilityFlow = "bill" | "phone" | "data" | "flight" | "movie" | "hotel";
+import type { UtilityFlow, UtilityResultState } from "./utilities/utilityTypes";
 
-type UtilityResultState = {
-  flow: UtilityFlow;
-  amount: string;
-  title: string;
-  time: string;
-  fee: string;
-  transactionId: string;
-  details: {
-    label: string;
-    value: string;
-  }[];
-};
-
-// ✅ [PATCH] thêm source để biết back về đâu
 type ReceiptSource = "home" | "mobilePhone";
 
 const flowLabelMap: Record<UtilityFlow, string> = {
@@ -35,7 +21,6 @@ const flowLabelMap: Record<UtilityFlow, string> = {
 const UtilityReceipt = () => {
   const navigate = useNavigate();
 
-  // ✅ [PATCH] đọc thêm source từ state
   const location = useLocation() as {
     state?: { result?: UtilityResultState; source?: ReceiptSource };
   };
@@ -49,27 +34,24 @@ const UtilityReceipt = () => {
     fee: "0 đ",
     transactionId: "HD-DEMO-0001",
     details: [
-      { label: "Loại hóa đơn", value: "Nước" },
+      { label: "Loại hóa đơn", value: "Nước sinh hoạt" },
       { label: "Mã khách hàng", value: "KH001" },
     ],
   };
 
   const data = location.state?.result ?? defaultResult;
   const flowLabel = flowLabelMap[data.flow];
-
-  // ✅ [PATCH] mặc định an toàn: nếu thiếu source thì coi như từ home
   const source: ReceiptSource = location.state?.source ?? "home";
 
   const handleDownload = () => {
-    toast.success("Đã tải xuống biên lai giao dịch (demo)");
+    toast.success("Đã tải biên lai giao dịch (demo)");
   };
 
   const handleShare = () => {
-    toast.success("Đang chia sẻ biên lai giao dịch (demo)");
+    toast.success("Đang chia sẻ biên lai (demo)");
   };
 
   const handleBack = () => {
-    // ✅ [PATCH] chỉ phone/data mới cần phân biệt nguồn
     if (data.flow === "phone" || data.flow === "data") {
       if (source === "mobilePhone") {
         navigate("/utilities/mobilePhone");
@@ -78,93 +60,108 @@ const UtilityReceipt = () => {
       }
       return;
     }
-
-    // giữ nguyên logic cũ cho các flow khác
     navigate("/home");
   };
 
   return (
-    <div className="min-h-screen bg-background pb-16">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-background to-background pb-16">
+      <header className="sticky top-0 z-30 border-b bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-sm">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
           <button
             onClick={handleBack}
-            className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            className="rounded-full border border-white/30 bg-white/10 p-2 transition hover:bg-white/20"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="text-2xl font-bold text-primary-foreground">
-            Chi tiết giao dịch
-          </h1>
-        </div>
-
-        <div className="flex justify-center">
-          <div className="bg-white/95 backdrop-blur-sm rounded-full px-6 py-3 flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-success" />
-            <span className="font-semibold text-success">
-              Giao dịch thành công
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="px-4 -mt-6 space-y-4">
-        <Card className="p-6">
-          {/* Số tiền */}
-          <div className="mb-6 text-center">
-            <p className="text-sm text-muted-foreground mb-1">
-              Số tiền giao dịch
-            </p>
-            <p className="text-3xl font-bold text-foreground">
-              {data.amount} VND
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">{data.title}</p>
-          </div>
-
-          {/* Nội dung */}
-          <div className="space-y-4 border-t pt-4 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Loại dịch vụ</span>
-              <span className="font-medium text-foreground">{flowLabel}</span>
+          <div className="flex-1">
+            <p className="text-xs opacity-80">Tiện ích – Thanh toán dịch vụ</p>
+            <div className="flex items-center justify-between gap-3">
+              <h1 className="text-lg font-semibold">Biên lai giao dịch</h1>
+              <Badge
+                variant="secondary"
+                className="border-white/30 bg-white/15 text-white"
+              >
+                {flowLabel}
+              </Badge>
             </div>
+          </div>
+        </div>
+      </header>
 
-            {data.details.map((item) => (
-              <div key={item.label} className="flex justify-between gap-6">
-                <span className="text-muted-foreground">{item.label}</span>
-                <span className="font-medium text-foreground text-right">
-                  {item.value}
-                </span>
+      <div className="relative z-10 mx-auto w-full max-w-3xl px-4 -mt-6 space-y-4">
+        <Card className="relative overflow-hidden border-none bg-white/95 shadow-lg">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-600" />
+          <div className="flex flex-col gap-4 p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-muted-foreground">Số tiền</p>
+                <p className="text-3xl font-bold text-foreground">
+                  {data.amount} VND
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{data.title}</p>
               </div>
-            ))}
-
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Thời gian</span>
-              <span className="font-medium text-foreground">{data.time}</span>
+              <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-emerald-700">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="text-sm font-semibold">Thành công</span>
+              </div>
             </div>
 
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Mã giao dịch</span>
-              <span className="font-medium text-foreground">
-                {data.transactionId}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Phí giao dịch</span>
-              <span className="font-medium text-foreground">{data.fee}</span>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-muted-foreground">Loại dịch vụ</p>
+                <p className="font-semibold text-foreground">{flowLabel}</p>
+              </div>
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-muted-foreground">Mã giao dịch</p>
+                <p className="font-semibold text-foreground">
+                  {data.transactionId}
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-muted-foreground">Thời gian</p>
+                <p className="font-semibold text-foreground">{data.time}</p>
+              </div>
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-muted-foreground">Phí giao dịch</p>
+                <p className="font-semibold text-foreground">{data.fee}</p>
+              </div>
             </div>
           </div>
         </Card>
 
-        {/* Nút hành động (mới) */}
+        <Card className="p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <Ticket className="h-5 w-5 text-emerald-700" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Chi tiết giao dịch
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Thông tin đã được xác thực và lưu trên hệ thống
+              </p>
+            </div>
+          </div>
+          <div className="space-y-3 text-sm">
+            {data.details.map((item) => (
+              <div
+                key={item.label}
+                className="flex items-start justify-between gap-4 rounded-lg bg-muted/30 px-3 py-2"
+              >
+                <span className="text-muted-foreground">{item.label}</span>
+                <span className="text-right font-medium text-foreground">
+                  {item.value || "-"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={handleDownload}>
+          <Button variant="outline" onClick={handleDownload} className="w-full">
             <Download className="w-4 h-4 mr-2" />
             Tải biên lai
           </Button>
-          <Button onClick={handleShare}>
+          <Button variant="outline" onClick={handleShare} className="w-full">
             <Share2 className="w-4 h-4 mr-2" />
             Chia sẻ
           </Button>
