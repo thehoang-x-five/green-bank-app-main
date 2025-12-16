@@ -77,12 +77,14 @@ All colors MUST be HSL.
   }
 
   /* Hide scrollbar while keeping scroll functionality */
-  .scrollbar-none {
+  .scrollbar-none,
+  .scrollbar-hide {
     -ms-overflow-style: none; /* IE and Edge */
     scrollbar-width: none; /* Firefox */
   }
 
-  .scrollbar-none::-webkit-scrollbar {
+  .scrollbar-none::-webkit-scrollbar,
+  .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
 }

@@ -3,7 +3,7 @@ import { functionsBaseUrl } from "@/lib/firebase";
 const baseUrl =
   (import.meta.env?.DEV &&
     import.meta.env?.VITE_USE_FUNCTIONS_EMULATOR === "true" &&
-    "http://127.0.0.1:5001/vietbank-final/asia-southeast1") ||
+    "http://127.0.0.1:5002/vietbank-final/asia-southeast1") ||
   functionsBaseUrl;
 
 export type ReverseGeocodeResult = {

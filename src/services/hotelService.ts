@@ -38,6 +38,8 @@ export type HotelItem = {
 const HOTELS_LIMIT = 50;
 
 export async function searchHotels(params: HotelSearchParams): Promise<HotelItem[]> {
+  console.log("[searchHotels] Searching with cityKey:", params.cityKey);
+  
   const hotelsRef = collection(fbDb, "hotels");
   const baseQuery = query(
     hotelsRef,
@@ -47,6 +49,7 @@ export async function searchHotels(params: HotelSearchParams): Promise<HotelItem
   );
 
   const snap = await getDocs(baseQuery);
+  console.log("[searchHotels] Found", snap.size, "hotels");
   const items: HotelItem[] = [];
   snap.forEach((doc) => {
     const d = doc.data() as any;

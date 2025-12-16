@@ -1,7 +1,7 @@
 // src/lib/firebase.ts
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator, type Firestore } from "firebase/firestore";
 import { getDatabase, type Database } from "firebase/database";
 import {
   connectFunctionsEmulator,
@@ -38,8 +38,9 @@ if (
   import.meta.env?.VITE_USE_FUNCTIONS_EMULATOR === "true"
 ) {
   // eslint-disable-next-line no-console
-  console.info("[firebase] Using local Functions emulator");
-  connectFunctionsEmulator(fbFns, "localhost", 5001);
+  console.info("[firebase] Using local emulators (Functions + Firestore)");
+  connectFunctionsEmulator(fbFns, "127.0.0.1", 5002);
+  connectFirestoreEmulator(fbDb, "127.0.0.1", 8082);
 }
 
 export const functionsBaseUrl =

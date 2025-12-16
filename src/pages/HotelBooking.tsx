@@ -3,8 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { reverseGeocode } from "@/services/geocodeService";
@@ -19,7 +28,7 @@ import {
 import {
   getVnProvinceOptions,
   getVnDistrictOptions,
-  getIntlCityOptions,
+  getIntlDestinations,
   type CityOption,
 } from "@/services/locationClient";
 import { requireBiometricForHighValueVnd } from "@/services/biometricService";
@@ -28,17 +37,47 @@ import {
   ArrowLeft,
   BedDouble,
   CalendarRange,
+  Check,
+  ChevronsUpDown,
   CreditCard,
+  ImageIcon,
   LocateFixed,
   MapPin,
   Search,
   Sparkles,
   UsersRound,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 type Step = 1 | 2 | 3;
+
+// Generate hotel room images using Unsplash source (free, no API key needed)
+const HOTEL_IMAGE_KEYWORDS = [
+  "hotel-room",
+  "luxury-bedroom",
+  "hotel-suite",
+  "resort-room",
+  "hotel-interior",
+];
+
+function getHotelImages(hotelId: string, count: number = 5): string[] {
+  // Use hotel ID as seed for consistent images per hotel
+  const seed = hotelId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return Array.from({ length: count }, (_, i) => {
+    const keyword = HOTEL_IMAGE_KEYWORDS[(seed + i) % HOTEL_IMAGE_KEYWORDS.length];
+    // Using picsum.photos for reliable free images
+    return `https://picsum.photos/seed/${hotelId}-${i}/800/600`;
+  });
+}
 
 const CITY_KEY_MAP: Record<string, string> = {
   "hà nội": "VN_HN",
@@ -85,12 +124,12 @@ export default function HotelBooking() {
   const [selectedProvince, setSelectedProvince] = useState("");
   const [selectedDistrict, setSelectedDistrict] = useState("");
 
-  // International
-  const [intlCities, setIntlCities] = useState<CityOption[]>([]);
+  // International - simple dropdown with popular destinations
+  const [intlDestinations] = useState<CityOption[]>(getIntlDestinations());
+  const [intlComboboxOpen, setIntlComboboxOpen] = useState(false);
 
   useEffect(() => {
     getVnProvinceOptions().then(setVnProvinces).catch(() => setVnProvinces([]));
-    getIntlCityOptions().then(setIntlCities).catch(() => setIntlCities([]));
     fetchUserAccounts()
       .then((list) => {
         setAccounts(list);
@@ -140,23 +179,35 @@ export default function HotelBooking() {
   };
 
   const handleSearch = async () => {
+    // Validate location selection
     const finalCityKey = resolveCityKey();
     if (!finalCityKey) {
-      toast.error("Chọn tỉnh/thành hoặc khu vực trước khi tìm");
+      if (locationMode === "vn") {
+        toast.error("Vui lòng chọn tỉnh/thành phố trước khi tìm kiếm");
+      } else {
+        toast.error("Vui lòng nhập thành phố/khu vực trước khi tìm kiếm");
+      }
       return;
     }
-    if (!nights) {
+
+    // Validate dates
+    if (!nights || nights <= 0) {
       toast.error("Ngày trả phòng phải sau ngày nhận phòng");
       return;
     }
+
+    // Normalize guest and room counts (already handled in onChange)
+    const normalizedGuests = Math.max(1, guests);
+    const normalizedRooms = Math.max(1, rooms);
+
     try {
       setLoadingSearch(true);
       const result = await searchHotels({
         cityKey: finalCityKey,
         checkIn,
         checkOut,
-        guests,
-        rooms,
+        guests: normalizedGuests,
+        rooms: normalizedRooms,
         filters,
       });
       setHotels(result);
@@ -167,7 +218,7 @@ export default function HotelBooking() {
       setCityKey(finalCityKey);
     } catch (err) {
       console.error(err);
-      toast.error("Không thể tải danh sách khách sạn demo");
+      toast.error("Không thể tải danh sách khách sạn. Vui lòng thử lại.");
     } finally {
       setLoadingSearch(false);
     }
@@ -196,10 +247,10 @@ export default function HotelBooking() {
       return;
     }
     const total = totalPrice;
-    if (total >= 15_000_000) {
+    if (total >= 10_000_000) {
       const biometric = await requireBiometricForHighValueVnd(total);
       if (biometric !== "ok") {
-        toast.error("Cần xác thực vân tay/FaceID cho giao dịch >= 15 triệu");
+        toast.error("Cần xác thực vân tay/FaceID cho giao dịch >= 10 triệu");
         return;
       }
     }
@@ -218,16 +269,29 @@ export default function HotelBooking() {
       navigate("/utilities/result", {
         state: {
           result: {
+            flow: "hotel" as const,
             title: "Đặt phòng khách sạn thành công",
             amount: total.toLocaleString("vi-VN") + " ₫",
-            description: `${selectedHotel.name} · ${selectedRoom.name} · ${nights || 1} đêm`,
+            time: new Date().toLocaleString("vi-VN"),
+            fee: "0 ₫",
+            transactionId: `HTL-${Date.now()}`,
+            details: [
+              { label: "Khách sạn", value: selectedHotel.name },
+              { label: "Hạng phòng", value: selectedRoom.name },
+              { label: "Ngày nhận phòng", value: checkIn },
+              { label: "Ngày trả phòng", value: checkOut },
+              { label: "Số đêm", value: `${nights || 1} đêm` },
+              { label: "Số khách", value: `${guests} khách` },
+              { label: "Số phòng", value: `${rooms} phòng` },
+            ],
           },
           source: "home",
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err?.message || "Thanh toán thất bại");
+      const errorMessage = err instanceof Error ? err.message : "Thanh toán thất bại";
+      toast.error(errorMessage);
     }
   };
 
@@ -297,193 +361,163 @@ export default function HotelBooking() {
 
           {step === 1 && (
             <div className="grid gap-4 p-5 md:p-6 bg-white">
-              <div className="flex items-center gap-3">
-                <Button
-                  size="sm"
-                  variant={locationMode === "vn" ? "default" : "outline"}
-                  onClick={() => setLocationMode("vn")}
-                >
-                  Việt Nam
-                </Button>
-                <Button
-                  size="sm"
-                  variant={locationMode === "intl" ? "default" : "outline"}
-                  onClick={() => setLocationMode("intl")}
-                >
-                  Quốc tế
-                </Button>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
-                <div className="space-y-2">
-                  <p className="text-xs uppercase font-semibold tracking-wide text-muted-foreground mb-1">
-                    Tỉnh/Thành phố
-                  </p>
-                  <select
-                    className="w-full rounded-xl border bg-background p-3 text-sm"
-                    value={selectedProvince}
-                    onChange={async (e) => {
-                      const code = e.target.value;
-                      setSelectedProvince(code);
-                      setSelectedDistrict("");
-                      if (code) {
-                        const provinceLabel = vnProvinces.find((p) => p.key === code)?.label || "";
-                        setCityInput(provinceLabel);
-                        setCityKey(`VN_${code}`);
-                        const districts = await getVnDistrictOptions(code);
-                        setVnDistricts(districts);
-                      } else {
-                        setVnDistricts([]);
-                      }
+              {/* Location Mode Tabs and GPS Button */}
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    variant={locationMode === "vn" ? "default" : "outline"}
+                    onClick={() => {
+                      setLocationMode("vn");
+                      // Clear international fields when switching to VN
+                      setCityInput("");
+                      setCityKey("");
                     }}
                   >
-                    <option value="">Chọn tỉnh/thành</option>
-                    {vnProvinces.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="grid gap-1">
-                    <Label className="text-xs text-muted-foreground">Quận/Huyện</Label>
-                    <select
-                      className="w-full rounded-xl border bg-background p-3 text-sm"
-                      value={selectedDistrict}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        setSelectedDistrict(code);
-                        if (code) {
-                          const distLabel = vnDistricts.find((d) => d.key === code)?.label || "";
-                          setCityInput(distLabel);
-                          setCityKey(`VN_${code}`);
-                        }
-                      }}
-                      disabled={!vnDistricts.length}
-                    >
-                      <option value="">Chọn quận/huyện</option>
-                      {vnDistricts.map((d) => (
-                        <option key={d.key} value={d.key}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    Việt Nam
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={locationMode === "intl" ? "default" : "outline"}
+                    onClick={() => {
+                      setLocationMode("intl");
+                      // Clear VN fields when switching to international
+                      setSelectedProvince("");
+                      setSelectedDistrict("");
+                      setVnDistricts([]);
+                    }}
+                  >
+                    Quốc tế
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-xs uppercase font-semibold tracking-wide text-muted-foreground mb-1">
-                    Quốc tế (CountriesNow)
-                  </p>
-                  <div className="grid gap-2">
-                    <Input
-                      placeholder="Nhập city/state/country"
-                      value={cityInput}
-                      onChange={(e) => {
-                        setCityInput(e.target.value);
-                        setCityKey("");
-                      }}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {intlCities.slice(0, 6).map((opt) => (
-                        <Button
-                          key={opt.key}
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setCityInput(opt.label);
-                            setCityKey(opt.key);
-                            setSelectedProvince("");
-                            setSelectedDistrict("");
-                          }}
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
-                    </div>
-                    <Button variant="outline" onClick={handleGeoSuggest} disabled={loadingGeo}>
-                      <LocateFixed size={16} className="mr-2" />
-                      Gợi ý GPS
-                    </Button>
-                  </div>
-                </div>
+                <Button variant="outline" onClick={handleGeoSuggest} disabled={loadingGeo}>
+                  <LocateFixed size={16} className="mr-2" />
+                  {loadingGeo ? "Đang lấy vị trí..." : "Gợi ý GPS"}
+                </Button>
               </div>
 
+              {/* Location Selection - Vietnam */}
               {locationMode === "vn" && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-1">
-                    <Label className="text-xs text-muted-foreground">Tỉnh/Thành (VN)</Label>
-                    <select
-                      className="w-full rounded-xl border bg-background p-2 text-sm"
-                      value={selectedProvince}
-                      onChange={async (e) => {
-                        const code = e.target.value;
-                        setSelectedProvince(code);
-                        setSelectedDistrict("");
-                        if (code) {
-                          const provinceLabel = vnProvinces.find((p) => p.key === code)?.label || "";
-                          setCityInput(provinceLabel);
-                          setCityKey(`VN_${code}`);
-                          const districts = await getVnDistrictOptions(code);
-                          setVnDistricts(districts);
-                        } else {
-                          setVnDistricts([]);
-                        }
-                      }}
-                    >
-                      <option value="">Chọn tỉnh/thành</option>
-                      {vnProvinces.map((p) => (
-                        <option key={p.key} value={p.key}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label className="text-xs text-muted-foreground">Quận/Huyện</Label>
-                    <select
-                      className="w-full rounded-xl border bg-background p-2 text-sm"
-                      value={selectedDistrict}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        setSelectedDistrict(code);
-                        if (code) {
-                          const distLabel = vnDistricts.find((d) => d.key === code)?.label || "";
-                          setCityInput(distLabel);
-                          setCityKey(`VN_${code}`);
-                        }
-                      }}
-                      disabled={!vnDistricts.length}
-                    >
-                      <option value="">Chọn quận/huyện</option>
-                      {vnDistricts.map((d) => (
-                        <option key={d.key} value={d.key}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </select>
+                <div className="space-y-3">
+                  <p className="text-xs uppercase font-semibold tracking-wide text-muted-foreground">
+                    Chọn địa điểm Việt Nam
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-1">
+                      <Label className="text-xs text-muted-foreground">Tỉnh/Thành phố</Label>
+                      <select
+                        className="w-full rounded-xl border bg-background p-3 text-sm"
+                        value={selectedProvince}
+                        onChange={async (e) => {
+                          const code = e.target.value;
+                          setSelectedProvince(code);
+                          setSelectedDistrict("");
+                          if (code) {
+                            const provinceLabel = vnProvinces.find((p) => p.key === code)?.label || "";
+                            setCityInput(provinceLabel);
+                            setCityKey(`VN_${code}`);
+                            const districts = await getVnDistrictOptions(code);
+                            setVnDistricts(districts);
+                          } else {
+                            setVnDistricts([]);
+                            setCityInput("");
+                            setCityKey("");
+                          }
+                        }}
+                      >
+                        <option value="">Chọn tỉnh/thành</option>
+                        {vnProvinces.map((p) => (
+                          <option key={p.key} value={p.key}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs text-muted-foreground">Quận/Huyện (tùy chọn)</Label>
+                      <select
+                        className="w-full rounded-xl border bg-background p-3 text-sm"
+                        value={selectedDistrict}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          setSelectedDistrict(code);
+                          if (code) {
+                            const distLabel = vnDistricts.find((d) => d.key === code)?.label || "";
+                            setCityInput(distLabel);
+                            setCityKey(`VN_${code}`);
+                          } else if (selectedProvince) {
+                            // If district is cleared but province is selected, use province
+                            const provinceLabel = vnProvinces.find((p) => p.key === selectedProvince)?.label || "";
+                            setCityInput(provinceLabel);
+                            setCityKey(`VN_${selectedProvince}`);
+                          }
+                        }}
+                        disabled={!vnDistricts.length}
+                      >
+                        <option value="">Chọn quận/huyện</option>
+                        {vnDistricts.map((d) => (
+                          <option key={d.key} value={d.key}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
 
+              {/* Location Selection - International */}
               {locationMode === "intl" && (
-                <div className="grid gap-2">
-                  <Label className="text-xs text-muted-foreground">Gợi ý thành phố quốc tế</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {intlCities.slice(0, 6).map((opt) => (
-                      <Button
-                        key={opt.key}
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setCityInput(opt.label);
-                          setCityKey(opt.key);
-                          setSelectedProvince("");
-                          setSelectedDistrict("");
-                        }}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
+                <div className="space-y-3">
+                  <p className="text-xs uppercase font-semibold tracking-wide text-muted-foreground">
+                    Chọn địa điểm quốc tế
+                  </p>
+                  <div className="grid gap-1">
+                    <Label className="text-xs text-muted-foreground">Điểm đến phổ biến</Label>
+                    <Popover open={intlComboboxOpen} onOpenChange={setIntlComboboxOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={intlComboboxOpen}
+                          className="w-full justify-between rounded-xl border bg-background p-3 text-sm font-normal h-auto"
+                        >
+                          {cityKey
+                            ? intlDestinations.find((c) => c.key === cityKey)?.label || cityInput
+                            : "Chọn điểm đến..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Tìm điểm đến..." />
+                          <CommandList>
+                            <CommandEmpty>Không tìm thấy.</CommandEmpty>
+                            <CommandGroup>
+                              {intlDestinations.map((opt) => (
+                                <CommandItem
+                                  key={opt.key}
+                                  value={opt.label}
+                                  onSelect={() => {
+                                    setCityInput(opt.label);
+                                    setCityKey(opt.key);
+                                    setIntlComboboxOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      cityKey === opt.key ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  {opt.label}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
               )}
@@ -608,12 +642,13 @@ export default function HotelBooking() {
 
         {step === 2 && (
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
+            {/* Left column: Hotel list */}
+            <Card className="p-4 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold">Danh sách khách sạn</p>
                 <Badge variant="secondary">{hotels.length} kết quả</Badge>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[500px] overflow-y-auto scrollbar-hide flex-1">
                 {hotels.map((h) => (
                   <button
                     key={h.id}
@@ -642,72 +677,122 @@ export default function HotelBooking() {
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 mt-auto pt-3">
                 <Button variant="outline" onClick={() => setStep(1)}>
                   Quay lại bước 1
                 </Button>
               </div>
             </Card>
-            {selectedHotel && (
-              <Card className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">Chọn hạng phòng</p>
-                  <Badge variant="secondary">
-                    {loadingRooms ? "Đang tải..." : `${roomsOptions.length} lựa chọn`}
-                  </Badge>
-                </div>
-                <div className="space-y-3">
-                  {roomsOptions.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedRoom(r);
-                        setStep(3);
-                      }}
-                      className={`w-full rounded-xl border p-3 text-left transition ${
-                        selectedRoom?.id === r.id
-                          ? "border-emerald-500 bg-emerald-50"
-                          : "border-muted hover:border-emerald-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold">{r.name}</p>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            {r.perks.map((perk) => (
-                              <Badge key={perk} variant="outline" className="text-xs">
-                                {perk}
-                              </Badge>
-                            ))}
+
+            {/* Right column: Hotel images & Room selection */}
+            <div className="space-y-4">
+              {/* Hotel Images Carousel */}
+              {selectedHotel && (
+                <Card className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold flex items-center gap-2">
+                      <ImageIcon size={16} className="text-emerald-700" />
+                      Hình ảnh khách sạn
+                    </p>
+                    <Badge variant="secondary">{selectedHotel.name}</Badge>
+                  </div>
+                  <div className="px-10">
+                    <Carousel className="w-full">
+                      <CarouselContent>
+                        {getHotelImages(selectedHotel.id).map((imgUrl, idx) => (
+                          <CarouselItem key={idx}>
+                            <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
+                              <img
+                                src={imgUrl}
+                                alt={`${selectedHotel.name} - Ảnh ${idx + 1}`}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                              <div className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-1 text-xs text-white">
+                                {idx + 1} / 5
+                              </div>
+                            </div>
+                          </CarouselItem>
+                        ))}
+                      </CarouselContent>
+                      <CarouselPrevious />
+                      <CarouselNext />
+                    </Carousel>
+                  </div>
+                  <p className="text-xs text-center text-muted-foreground">
+                    Vuốt hoặc bấm mũi tên để xem thêm ảnh
+                  </p>
+                </Card>
+              )}
+
+              {/* Room Selection */}
+              {selectedHotel && (
+                <Card className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Chọn hạng phòng</p>
+                    <Badge variant="secondary">
+                      {loadingRooms ? "Đang tải..." : `${roomsOptions.length} lựa chọn`}
+                    </Badge>
+                  </div>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto scrollbar-hide">
+                    {roomsOptions.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRoom(r);
+                          setStep(3);
+                        }}
+                        className={`w-full rounded-xl border p-3 text-left transition ${
+                          selectedRoom?.id === r.id
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-muted hover:border-emerald-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">{r.name}</p>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                              {r.perks.map((perk) => (
+                                <Badge key={perk} variant="outline" className="text-xs">
+                                  {perk}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-emerald-700">
+                              {r.pricePerNight.toLocaleString("vi-VN")} ₫/đêm
+                            </p>
+                            {r.refundable && <p className="text-[11px] text-emerald-600">Hủy miễn phí</p>}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-emerald-700">
-                            {r.pricePerNight.toLocaleString("vi-VN")} ₫/đêm
-                          </p>
-                          {r.refundable && <p className="text-[11px] text-emerald-600">Hủy miễn phí</p>}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                  {!roomsOptions.length && !loadingRooms && (
-                    <p className="text-xs text-muted-foreground">Chọn khách sạn để xem hạng phòng.</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button variant="outline" onClick={() => setStep(1)}>
-                    Quay lại bước 1
-                  </Button>
-                </div>
-              </Card>
-            )}
+                      </button>
+                    ))}
+                    {!roomsOptions.length && !loadingRooms && (
+                      <p className="text-xs text-muted-foreground">Chọn khách sạn để xem hạng phòng.</p>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {/* Placeholder when no hotel selected */}
+              {!selectedHotel && (
+                <Card className="p-8 flex flex-col items-center justify-center text-center space-y-3 min-h-[300px]">
+                  <ImageIcon size={48} className="text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">
+                    Chọn một khách sạn từ danh sách bên trái để xem hình ảnh và hạng phòng
+                  </p>
+                </Card>
+              )}
+            </div>
           </div>
         )}
 
         {step === 3 && selectedHotel && selectedRoom && (
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Card className="p-4 space-y-3">
+          <div className="mt-4 grid gap-4 md:grid-cols-10">
+            {/* Left column: Payment confirmation - 7/10 */}
+            <Card className="p-4 space-y-3 md:col-span-7">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">Xác nhận & thanh toán</p>
                 <Badge variant="secondary">Demo</Badge>
@@ -749,18 +834,18 @@ export default function HotelBooking() {
               </div>
               <div className="space-y-2 text-sm">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">Tài khoản nguồn</p>
-                <select
-                  className="w-full rounded-xl border bg-background p-3 text-sm"
-                  value={selectedAccount}
-                  onChange={(e) => setSelectedAccount(e.target.value)}
-                >
-                  {accounts.map((acc) => (
-                    <option key={acc.accountNumber} value={acc.accountNumber}>
-                      {acc.accountNumber} · {acc.balance.toLocaleString("vi-VN")} ₫
-                    </option>
-                  ))}
-                  {!accounts.length && <option value="">Chưa có tài khoản</option>}
-                </select>
+                {accounts.length > 0 ? (
+                  <div className="rounded-xl border bg-muted/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-semibold">{selectedAccount}</span>
+                      <span className="text-emerald-600 font-semibold">
+                        {accounts.find((a) => a.accountNumber === selectedAccount)?.balance.toLocaleString("vi-VN")} ₫
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Chưa có tài khoản</p>
+                )}
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button variant="outline" onClick={() => setStep(2)}>
@@ -769,6 +854,49 @@ export default function HotelBooking() {
                 <Button onClick={handlePayment} disabled={!selectedAccount}>
                   Thanh toán & xem biên lai
                 </Button>
+              </div>
+            </Card>
+
+            {/* Right column: Commitments & Notes - 3/10 */}
+            <Card className="p-4 space-y-4 md:col-span-3">
+              <div>
+                <p className="text-sm font-semibold mb-3">Cam kết của chúng tôi</p>
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-start gap-2">
+                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <span>Xác nhận đặt phòng ngay lập tức qua email và SMS</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <span>Giá tốt nhất được đảm bảo, không phí ẩn</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <span>Hỗ trợ khách hàng 24/7 qua hotline 1900-xxxx</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <span>Thanh toán an toàn, bảo mật thông tin</span>
+                  </div>
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <p className="text-sm font-semibold mb-3">Lưu ý quan trọng</p>
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <p>• Giờ nhận phòng: từ 14:00, trả phòng: trước 12:00</p>
+                  <p>• Vui lòng mang theo CCCD/Hộ chiếu khi nhận phòng</p>
+                  <p>• Chính sách hủy phòng theo quy định của khách sạn</p>
+                  {selectedRoom.refundable ? (
+                    <p className="text-emerald-600 font-medium">✓ Phòng này có thể hoàn tiền</p>
+                  ) : (
+                    <p className="text-amber-600 font-medium">⚠ Phòng này không hoàn tiền</p>
+                  )}
+                </div>
+              </div>
+              <Separator />
+              <div className="text-xs text-muted-foreground">
+                <p>Bằng việc thanh toán, bạn đồng ý với <span className="text-primary underline cursor-pointer">Điều khoản sử dụng</span> và <span className="text-primary underline cursor-pointer">Chính sách bảo mật</span> của VietBank.</p>
               </div>
             </Card>
           </div>

@@ -1,7 +1,4 @@
 import {
-  fetchCities,
-  fetchCountries,
-  fetchStates,
   fetchVnCities,
   fetchVnProvinces,
   fetchVnDistricts,
@@ -11,6 +8,20 @@ import {
 
 export type CityOption = { label: string; key: string };
 
+// Popular international destinations with hotels in our database
+const INTL_DESTINATIONS: CityOption[] = [
+  { label: "Bangkok, Thailand", key: "INT_BANGKOK" },
+  { label: "Singapore", key: "INT_SINGAPORE" },
+  { label: "Tokyo, Japan", key: "INT_TOKYO" },
+  { label: "Seoul, South Korea", key: "INT_SEOUL" },
+  { label: "Hong Kong", key: "INT_HONG_KONG" },
+  { label: "Kuala Lumpur, Malaysia", key: "INT_KUALA_LUMPUR" },
+  { label: "Bali, Indonesia", key: "INT_BALI" },
+  { label: "Phuket, Thailand", key: "INT_PHUKET" },
+  { label: "Paris, France", key: "INT_PARIS" },
+  { label: "London, UK", key: "INT_LONDON" },
+];
+
 export async function getVnCityOptions(): Promise<CityOption[]> {
   const list: VnLocation[] = await fetchVnCities();
   return list.map((l) => ({
@@ -19,19 +30,9 @@ export async function getVnCityOptions(): Promise<CityOption[]> {
   }));
 }
 
-export async function getIntlCityOptions(): Promise<CityOption[]> {
-  try {
-    const countries = await fetchCountries();
-    const firstCountry = countries[0] || "Vietnam";
-    const states = await fetchStates(firstCountry);
-    const firstState = states[0] || "";
-    if (!firstCountry || !firstState) return [];
-    const cities = await fetchCities(firstCountry, firstState);
-    return cities.map((c) => ({ label: `${c}, ${firstCountry}`, key: `INT_${c}` }));
-  } catch (err) {
-    console.error("getIntlCityOptions error:", err);
-    return [];
-  }
+// International: Get popular destinations (no API call needed)
+export function getIntlDestinations(): CityOption[] {
+  return INTL_DESTINATIONS;
 }
 
 export async function getVnProvinceOptions(): Promise<CityOption[]> {

@@ -730,289 +730,120 @@ exports.getVnWards = onRequest({ region: FUNCTIONS_REGION }, async (req, res) =>
 /* =========================================================
  * Dev helper: seedHotelsDemo (Firestore demo data)
  * ========================================================= */
-const HOTELS_DEMO = [
-  {
-    cityKey: "VN_HN",
-    name: "GreenBank Hotel Hanoi",
-    lat: 21.0285,
-    lon: 105.8542,
-    stars: 4,
-    rating: 4.3,
-    priceFrom: 850000,
-    distanceToCenterKm: 1.2,
-    amenities: ["wifi", "breakfast", "pool"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HN",
-    name: "Lakeview Boutique Hanoi",
-    lat: 21.0332,
-    lon: 105.8508,
-    stars: 4,
-    rating: 4.6,
-    priceFrom: 980000,
-    distanceToCenterKm: 0.8,
-    amenities: ["wifi", "breakfast"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HN",
-    name: "Old Quarter Premier",
-    lat: 21.0364,
-    lon: 105.8459,
-    stars: 5,
-    rating: 4.8,
-    priceFrom: 1450000,
-    distanceToCenterKm: 0.5,
-    amenities: ["wifi", "breakfast", "gym"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HN",
-    name: "Westlake Executive",
-    lat: 21.0581,
-    lon: 105.8197,
-    stars: 4,
-    rating: 4.2,
-    priceFrom: 760000,
-    distanceToCenterKm: 3.1,
-    amenities: ["wifi", "pool"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HCM",
-    name: "GreenBank Saigon Riverside",
-    lat: 10.7758,
-    lon: 106.7009,
-    stars: 5,
-    rating: 4.7,
-    priceFrom: 1650000,
-    distanceToCenterKm: 0.9,
-    amenities: ["wifi", "breakfast", "pool", "gym"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HCM",
-    name: "Ben Thanh Suites",
-    lat: 10.7721,
-    lon: 106.6983,
-    stars: 4,
-    rating: 4.4,
-    priceFrom: 920000,
-    distanceToCenterKm: 0.4,
-    amenities: ["wifi", "breakfast"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HCM",
-    name: "District 1 Skyline",
-    lat: 10.7769,
-    lon: 106.7033,
-    stars: 4,
-    rating: 4.5,
-    priceFrom: 1180000,
-    distanceToCenterKm: 0.7,
-    amenities: ["wifi", "gym"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HCM",
-    name: "Pho Co Heritage Saigon",
-    lat: 10.7698,
-    lon: 106.6899,
-    stars: 3,
-    rating: 4.1,
-    priceFrom: 620000,
-    distanceToCenterKm: 1.4,
-    amenities: ["wifi"],
-    images: [],
-  },
-  {
-    cityKey: "VN_DN",
-    name: "Han River View",
-    lat: 16.0704,
-    lon: 108.2245,
-    stars: 4,
-    rating: 4.4,
-    priceFrom: 780000,
-    distanceToCenterKm: 1.0,
-    amenities: ["wifi", "breakfast"],
-    images: [],
-  },
-  {
-    cityKey: "VN_DN",
-    name: "My Khe Beachfront",
-    lat: 16.0621,
-    lon: 108.2457,
-    stars: 4,
-    rating: 4.5,
-    priceFrom: 1050000,
-    distanceToCenterKm: 2.6,
-    amenities: ["wifi", "pool", "breakfast"],
-    images: [],
-  },
-  {
-    cityKey: "VN_DN",
-    name: "Dragon Bridge Hotel",
-    lat: 16.0614,
-    lon: 108.2291,
-    stars: 3,
-    rating: 4.0,
-    priceFrom: 540000,
-    distanceToCenterKm: 1.3,
-    amenities: ["wifi"],
-    images: [],
-  },
-  {
-    cityKey: "VN_DN",
-    name: "Son Tra Retreat",
-    lat: 16.083,
-    lon: 108.2476,
-    stars: 5,
-    rating: 4.7,
-    priceFrom: 1580000,
-    distanceToCenterKm: 4.2,
-    amenities: ["wifi", "pool", "gym", "spa"],
-    images: [],
-  },
-  {
-    cityKey: "VN_NT",
-    name: "Nha Trang Central",
-    lat: 12.2388,
-    lon: 109.1967,
-    stars: 4,
-    rating: 4.3,
-    priceFrom: 820000,
-    distanceToCenterKm: 0.8,
-    amenities: ["wifi", "breakfast"],
-    images: [],
-  },
-  {
-    cityKey: "VN_NT",
-    name: "Tram Huong Bay Resort",
-    lat: 12.2216,
-    lon: 109.2057,
-    stars: 5,
-    rating: 4.8,
-    priceFrom: 1720000,
-    distanceToCenterKm: 2.0,
-    amenities: ["wifi", "pool", "gym", "spa"],
-    images: [],
-  },
-  {
-    cityKey: "VN_NT",
-    name: "Blue Coral Hotel",
-    lat: 12.252,
-    lon: 109.1895,
-    stars: 3,
-    rating: 4.1,
-    priceFrom: 590000,
-    distanceToCenterKm: 1.6,
-    amenities: ["wifi"],
-    images: [],
-  },
-  {
-    cityKey: "VN_NT",
-    name: "Seaside Boulevard",
-    lat: 12.2334,
-    lon: 109.2082,
-    stars: 4,
-    rating: 4.5,
-    priceFrom: 940000,
-    distanceToCenterKm: 1.1,
-    amenities: ["wifi", "pool"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HN",
-    name: "Hoan Kiem Luxe",
-    lat: 21.0313,
-    lon: 105.8521,
-    stars: 5,
-    rating: 4.9,
-    priceFrom: 1950000,
-    distanceToCenterKm: 0.3,
-    amenities: ["wifi", "breakfast", "pool", "spa"],
-    images: [],
-  },
-  {
-    cityKey: "VN_HCM",
-    name: "Thu Thiem River Park",
-    lat: 10.7801,
-    lon: 106.721,
-    stars: 4,
-    rating: 4.2,
-    priceFrom: 870000,
-    distanceToCenterKm: 2.2,
-    amenities: ["wifi", "pool"],
-    images: [],
-  },
-  {
-    cityKey: "VN_DN",
-    name: "Marble Mountain Retreat",
-    lat: 16.0,
-    lon: 108.263,
-    stars: 4,
-    rating: 4.4,
-    priceFrom: 880000,
-    distanceToCenterKm: 6.5,
-    amenities: ["wifi", "breakfast", "pool"],
-    images: [],
-  },
-  {
-    cityKey: "VN_NT",
-    name: "Hon Chong Vista",
-    lat: 12.2695,
-    lon: 109.196,
-    stars: 4,
-    rating: 4.3,
-    priceFrom: 990000,
-    distanceToCenterKm: 3.4,
-    amenities: ["wifi", "breakfast"],
-    images: [],
-  },
-];
+const { ALL_HOTELS, ALL_ROOMS, VN_LOCATIONS } = require("./hotelSeedData");
 
-const MIN_VN_LOCATIONS = [
-  { id: "VN_HN", name: "Hà Nội", type: "province" },
-  { id: "VN_HCM", name: "TP.HCM", type: "province" },
-  { id: "VN_DN", name: "Đà Nẵng", type: "province" },
-  { id: "VN_NT", name: "Khánh Hòa", type: "province" },
-];
+const HOTELS_DEMO = ALL_HOTELS;
+const MIN_VN_LOCATIONS = VN_LOCATIONS;
 
-async function seedHotelsDemoData() {
+async function seedHotelsDemoData(forceReseed = false) {
   const hotelsRef = firestore.collection("hotels");
-  const existing = await hotelsRef.limit(1).get();
-  if (!existing.empty) {
-    return { skipped: true, reason: "Collection not empty" };
+  
+  // Delete existing if force reseed
+  if (forceReseed) {
+    const existing = await hotelsRef.get();
+    const deleteBatch = firestore.batch();
+    existing.docs.forEach((doc) => deleteBatch.delete(doc.ref));
+    if (!existing.empty) await deleteBatch.commit();
+  } else {
+    const existing = await hotelsRef.limit(1).get();
+    if (!existing.empty) {
+      return { skipped: true, reason: "Collection not empty" };
+    }
+  }
+
+  // Firestore batch limit is 500, so we need multiple batches
+  const FieldValue = admin.firestore.FieldValue;
+  const batchSize = 450;
+  let inserted = 0;
+  
+  for (let i = 0; i < HOTELS_DEMO.length; i += batchSize) {
+    const batch = firestore.batch();
+    const chunk = HOTELS_DEMO.slice(i, i + batchSize);
+    chunk.forEach((hotel, idx) => {
+      const ref = hotelsRef.doc(`demo-${i + idx + 1}`);
+      batch.set(ref, {
+        ...hotel,
+        createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+      });
+    });
+    await batch.commit();
+    inserted += chunk.length;
+  }
+  
+  return { skipped: false, inserted };
+}
+
+async function seedMinimalLocations(forceReseed = false) {
+  const coll = firestore.collection("locations_vn");
+  
+  if (forceReseed) {
+    const existing = await coll.get();
+    const deleteBatch = firestore.batch();
+    existing.docs.forEach((doc) => deleteBatch.delete(doc.ref));
+    if (!existing.empty) await deleteBatch.commit();
+  } else {
+    const snap = await coll.limit(1).get();
+    if (!snap.empty) return { skipped: true, reason: "locations_vn not empty" };
   }
 
   const batch = firestore.batch();
-  HOTELS_DEMO.forEach((hotel, idx) => {
-    const ref = hotelsRef.doc(`demo-${idx + 1}`);
-    batch.set(ref, {
-      ...hotel,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  });
-  await batch.commit();
-  return { skipped: false, inserted: HOTELS_DEMO.length };
-}
-
-async function seedMinimalLocations() {
-  const coll = firestore.collection("locations_vn");
-  const snap = await coll.limit(1).get();
-  if (!snap.empty) return { skipped: true, reason: "locations_vn not empty" };
-
-  const batch = firestore.batch();
+  const FieldValue = admin.firestore.FieldValue;
   MIN_VN_LOCATIONS.forEach((loc) => {
     batch.set(coll.doc(loc.id), {
       ...loc,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
     });
   });
   await batch.commit();
   return { skipped: false, inserted: MIN_VN_LOCATIONS.length };
+}
+
+async function seedHotelRoomsData(forceReseed = false) {
+  const roomsRef = firestore.collection("hotel_rooms");
+  
+  // Delete existing if force reseed
+  if (forceReseed) {
+    const existing = await roomsRef.get();
+    const deleteBatch = firestore.batch();
+    let deleteCount = 0;
+    for (const doc of existing.docs) {
+      deleteBatch.delete(doc.ref);
+      deleteCount++;
+      // Commit every 450 deletes
+      if (deleteCount % 450 === 0) {
+        await deleteBatch.commit();
+      }
+    }
+    if (deleteCount % 450 !== 0 && deleteCount > 0) {
+      await deleteBatch.commit();
+    }
+  } else {
+    const existing = await roomsRef.limit(1).get();
+    if (!existing.empty) {
+      return { skipped: true, reason: "hotel_rooms collection not empty" };
+    }
+  }
+
+  // Firestore batch limit is 500, so we need multiple batches
+  const FieldValue = admin.firestore.FieldValue;
+  const batchSize = 450;
+  let inserted = 0;
+  
+  for (let i = 0; i < ALL_ROOMS.length; i += batchSize) {
+    const batch = firestore.batch();
+    const chunk = ALL_ROOMS.slice(i, i + batchSize);
+    chunk.forEach((room, idx) => {
+      const ref = roomsRef.doc(`room-${i + idx + 1}`);
+      batch.set(ref, {
+        ...room,
+        createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+      });
+    });
+    await batch.commit();
+    inserted += chunk.length;
+  }
+  
+  return { skipped: false, inserted };
 }
 
 exports.seedHotelsDemo = onRequest(
@@ -1033,9 +864,11 @@ exports.seedHotelsDemo = onRequest(
     }
 
     try {
-      const hotels = await seedHotelsDemoData();
-      const locations = await seedMinimalLocations();
-      res.status(200).json({ hotels, locations });
+      const forceReseed = req.body?.force === true || req.query?.force === "true";
+      const hotels = await seedHotelsDemoData(forceReseed);
+      const locations = await seedMinimalLocations(forceReseed);
+      const rooms = await seedHotelRoomsData(forceReseed);
+      res.status(200).json({ hotels, locations, rooms, forceReseed });
     } catch (err) {
       console.error("seedHotelsDemo error:", err);
       res.status(500).json({ error: "Failed to seed hotels demo" });
