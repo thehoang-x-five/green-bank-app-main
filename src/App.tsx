@@ -40,6 +40,7 @@ import SupportHelp from "@/pages/SupportHelp";
 import TransactionDetail from "@/pages/TransactionDetail";
 import UtilityBills from "@/pages/UtilityBills";
 import UtilityReceipt from "@/pages/UtilityReceipt";
+import HotelBooking from "@/pages/HotelBooking";
 
 import BottomNav from "@/components/BottomNav";
 
@@ -305,6 +306,15 @@ const App = () => (
           />
 
           {/* Utilities */}
+          <Route
+            path="/utilities/hotel-booking"
+            element={
+              <>
+                <HotelBooking />
+                <BottomNav />
+              </>
+            }
+          />
           <Route
             path="/utilities/:type"
             element={

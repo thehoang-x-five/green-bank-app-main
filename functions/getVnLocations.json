@@ -1,0 +1,7 @@
+[
+  { "id": "VN_HN", "name": "Hà Nội", "type": "province" },
+  { "id": "VN_HCM", "name": "TP.HCM", "type": "province" },
+  { "id": "VN_DN", "name": "Đà Nẵng", "type": "province" },
+  { "id": "VN_HP", "name": "Hải Phòng", "type": "province" },
+  { "id": "VN_KH", "name": "Khánh Hòa", "type": "province" }
+]

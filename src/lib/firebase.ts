@@ -1,9 +1,13 @@
 // src/lib/firebase.ts
-import { initializeApp } from "firebase/app";
+import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getDatabase } from "firebase/database";
-import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getDatabase, type Database } from "firebase/database";
+import {
+  connectFunctionsEmulator,
+  getFunctions,
+  type Functions,
+} from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBaBxbCTIyyQ66zaYxlyrlDWMUSR0XVyuk",
@@ -11,24 +15,33 @@ const firebaseConfig = {
   databaseURL:
     "https://vietbank-final-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "vietbank-final",
-  // *** PHẢI LÀ appspot.com, KHÔNG PHẢI firebasestorage.app ***
   storageBucket: "vietbank-final.appspot.com",
-  // ******************************************************
   messagingSenderId: "670011798086",
   appId: "1:670011798086:web:b44d04ca1b0a597399d047",
   measurementId: "G-HHXRVGY11V",
-
 };
 
-const app = initializeApp(firebaseConfig);
+export const fbApp: FirebaseApp = initializeApp(firebaseConfig);
+export const fbAuth: Auth = getAuth(fbApp);
+export const fbDb: Firestore = getFirestore(fbApp);
+export const fbRtdb: Database = getDatabase(fbApp);
+export const functionsRegion = "asia-southeast1";
+export const fbFns: Functions = getFunctions(fbApp, functionsRegion);
 
-// Auth / DB export dùng chung
-export const firebaseAuth: Auth = getAuth(app);
-export const firebaseDb = getFirestore(app);
-export const firebaseRtdb = getDatabase(app);
-export const firebaseFns = getFunctions(app, "asia-southeast1");
+// Backward-compatible aliases
+export const firebaseAuth = fbAuth;
+export const firebaseDb = fbDb;
+export const firebaseRtdb = fbRtdb;
 
-// Dev-only: dùng emulator Functions nếu đặt biến môi trường VITE_USE_FUNCTIONS_EMULATOR=true
-if (import.meta.env?.DEV && import.meta.env?.VITE_USE_FUNCTIONS_EMULATOR === "true") {
-  connectFunctionsEmulator(firebaseFns, "localhost", 5001);
+if (
+  import.meta.env?.DEV &&
+  import.meta.env?.VITE_USE_FUNCTIONS_EMULATOR === "true"
+) {
+  // eslint-disable-next-line no-console
+  console.info("[firebase] Using local Functions emulator");
+  connectFunctionsEmulator(fbFns, "localhost", 5001);
 }
+
+export const functionsBaseUrl =
+  import.meta.env?.VITE_FUNCTIONS_BASE_URL ||
+  `https://${functionsRegion}-${firebaseConfig.projectId}.cloudfunctions.net`;

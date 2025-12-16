@@ -42,7 +42,7 @@ const Home = () => {
     { icon: Shield, label: "Mua bảo hiểm", path: "/utilities/insurance" },
     { icon: Plane, label: "Vé máy bay", path: "/utilities/flight" },
     { icon: Film, label: "Vé xem phim", path: "/utilities/movie" },
-    { icon: Hotel, label: "Đặt phòng khách sạn", path: "/utilities/hotel" },
+    { icon: Hotel, label: "Đặt phòng khách sạn", path: "/utilities/hotel-booking" },
     { icon: MoreHorizontal, label: "Xem tất cả", path: "/utilities/all" },
   ];
   
@@ -92,8 +92,7 @@ const Home = () => {
     }
   };
 
-  const displayName =
-    profile?.username || "Khách hàng";
+  const displayName = profile?.username || "Khách hàng";
 
   const displayBalance = formatMoney(balance);
 
