@@ -423,7 +423,9 @@ export default function HotelBooking() {
         checkOut,
         accountNumber: selectedAccount,
       });
-      toast.success("Thanh toán thành công");
+      toast.success(
+        `Đặt phòng thành công: ${selectedHotel.name} • ${selectedRoom.name} • ${checkIn} → ${checkOut}`
+      );
       navigate("/utilities/result", {
         state: {
           result: {

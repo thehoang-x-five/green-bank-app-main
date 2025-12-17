@@ -521,7 +521,9 @@ export default function MovieBooking() {
         accountId: selectedAccountId,
       });
 
-      toast.success("Thanh toán thành công");
+      toast.success(
+        `Đặt vé thành công: ${selectedMovie.title} • ${selectedCinema.name} • ${selectedShowtime.date} ${selectedShowtime.time}`
+      );
       navigate("/utilities/result", {
         state: {
           result: {

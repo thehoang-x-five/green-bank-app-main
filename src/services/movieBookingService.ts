@@ -1,10 +1,12 @@
 import { fbDb, fbAuth, fbRtdb } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import {
-  collection,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { ref, get, runTransaction as rtdbRunTransaction } from "firebase/database";
+  ref,
+  get,
+  runTransaction as rtdbRunTransaction,
+  push,
+  set,
+} from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
 
 export interface CreateMovieBookingParams {
@@ -57,7 +59,9 @@ export async function createMovieBooking(
 
   // Check eKYC status
   if (profile.ekycStatus !== "VERIFIED") {
-    throw new Error("Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực.");
+    throw new Error(
+      "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+    );
   }
 
   // Check transaction permission
@@ -66,24 +70,25 @@ export async function createMovieBooking(
   }
 
   // Handle account transaction in Realtime Database
+  let balanceAfter = 0;
   if (params.accountId && params.accountId !== "DEMO") {
     const accountRef = ref(fbRtdb, `accounts/${params.accountId}`);
-    
+
     // Check if account exists first
     const accountSnap = await get(accountRef);
     if (!accountSnap.exists()) {
       throw new Error("Không tìm thấy tài khoản thanh toán");
     }
-    
+
     const accountData = accountSnap.val() as Record<string, unknown>;
-    
+
     // Verify account ownership
     if (accountData.uid !== user.uid) {
       throw new Error("Bạn không có quyền sử dụng tài khoản này");
     }
-    
+
     // Run transaction to deduct balance
-    await rtdbRunTransaction(accountRef, (current) => {
+    balanceAfter = await rtdbRunTransaction(accountRef, (current) => {
       const acc = current as Record<string, unknown> | null;
       if (!acc) {
         return current; // Abort transaction
@@ -91,13 +96,22 @@ export async function createMovieBooking(
       if (acc.status === "LOCKED") {
         throw new Error("Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng.");
       }
-      const balance = typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+      const balance =
+        typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
       if (balance < params.totalAmount) {
-        throw new Error(`Số dư không đủ. Cần ${params.totalAmount.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`);
+        throw new Error(
+          `Số dư không đủ. Cần ${params.totalAmount.toLocaleString(
+            "vi-VN"
+          )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+        );
       }
       return { ...acc, balance: balance - params.totalAmount };
     }).then((res) => {
       if (!res.committed) throw new Error("Giao dịch thất bại");
+      const acc = res.snapshot.val() as Record<string, unknown>;
+      return typeof acc.balance === "number"
+        ? acc.balance
+        : Number((acc.balance as string) || 0);
     });
   }
 
@@ -137,6 +151,25 @@ export async function createMovieBooking(
     },
     createdAt: serverTimestamp(),
   });
+
+  // Push balance-change notification to RTDB (Biến động tab)
+  try {
+    const notiRef = push(ref(fbRtdb, `notifications/${user.uid}`));
+    const createdAt = Date.now();
+    await set(notiRef, {
+      type: "BALANCE_CHANGE",
+      direction: "OUT",
+      title: "Đặt vé xem phim",
+      message: `${params.movieTitle} • ${params.cinemaName}`,
+      amount: params.totalAmount,
+      accountNumber: params.accountId,
+      balanceAfter,
+      transactionId: txnRef.id,
+      createdAt,
+    });
+  } catch (err) {
+    console.warn("createMovieBooking notification failed (ignored):", err);
+  }
 
   return {
     bookingId: bookingRef.id,

@@ -1,5 +1,5 @@
 import { collection, getDocs, query, where, addDoc, serverTimestamp } from "firebase/firestore";
-import { get, ref, runTransaction } from "firebase/database";
+import { get, ref, runTransaction, push, set } from "firebase/database";
 import { firebaseAuth, fbDb, firebaseRtdb } from "@/lib/firebase";
 import { getCurrentUserProfile } from "@/services/userService";
 import type { HotelItem } from "./hotelService";
@@ -89,15 +89,15 @@ export async function createHotelBooking(params: {
   }
 
   if (params.guests < 1) {
-    throw new Error("Số khách phải ít nhất là 1");
+    throw new Error("Số khách phải >= 1");
   }
 
   if (params.rooms < 1) {
-    throw new Error("Số phòng phải ít nhất là 1");
+    throw new Error("Số phòng phải >= 1");
   }
 
   if (params.nights < 1) {
-    throw new Error("Số đêm phải ít nhất là 1");
+    throw new Error("Số đêm phải >= 1");
   }
 
   if (!params.accountNumber) {
@@ -111,20 +111,20 @@ export async function createHotelBooking(params: {
   // Handle account transaction in Realtime Database
   if (params.accountNumber && params.accountNumber !== "DEMO") {
     const accountRef = ref(firebaseRtdb, `accounts/${params.accountNumber}`);
-    
+
     // Check if account exists first
     const accountSnap = await get(accountRef);
     if (!accountSnap.exists()) {
       throw new Error("Không tìm thấy tài khoản thanh toán");
     }
-    
+
     const accountData = accountSnap.val() as Record<string, unknown>;
-    
+
     // Verify account ownership
     if (accountData.uid !== currentUser.uid) {
       throw new Error("Bạn không có quyền sử dụng tài khoản này");
     }
-    
+
     // Run transaction to deduct balance
     newBalance = await runTransaction(accountRef, (current) => {
       const acc = current as Record<string, unknown> | null;
@@ -136,7 +136,9 @@ export async function createHotelBooking(params: {
       }
       const balance = typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
       if (balance < total) {
-        throw new Error(`Số dư không đủ. Cần ${total.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`);
+        throw new Error(
+          `Số dư không đủ. Cần ${total.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+        );
       }
       return { ...acc, balance: balance - total };
     }).then((res) => {
@@ -174,6 +176,25 @@ export async function createHotelBooking(params: {
     transactionId: txnRef.id,
     createdAt: serverTimestamp(),
   });
+
+  // Push balance-change notification to RTDB (Biến động tab)
+  try {
+    const notiRef = push(ref(firebaseRtdb, `notifications/${currentUser.uid}`));
+    const createdAt = Date.now();
+    await set(notiRef, {
+      type: "BALANCE_CHANGE",
+      direction: "OUT",
+      title: "Đặt phòng khách sạn",
+      message: `${params.hotel.name} • ${params.room.name}`,
+      amount: total,
+      accountNumber: params.accountNumber,
+      balanceAfter: newBalance,
+      transactionId: txnRef.id,
+      createdAt,
+    });
+  } catch (err) {
+    console.warn("createHotelBooking notification failed (ignored):", err);
+  }
 
   return { bookingId: bookingRef.id, transactionId: txnRef.id, newBalance };
 }
