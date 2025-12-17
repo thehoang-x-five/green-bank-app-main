@@ -42,6 +42,8 @@ import UtilityBills from "@/pages/UtilityBills";
 import UtilityReceipt from "@/pages/UtilityReceipt";
 import HotelBooking from "@/pages/HotelBooking";
 import MovieBooking from "@/pages/MovieBooking";
+import UtilityMobileHistory from "@/pages/UtilityMobileHistory";
+import UtilityConfirmPayment from "@/pages/utilities/UtilityConfirmPayment";
 
 import BottomNav from "@/components/BottomNav";
 
@@ -307,6 +309,7 @@ const App = () => (
           />
 
           {/* Utilities */}
+          <Route path="/utilities/:type" element={<UtilitiesShell />} />
           <Route
             path="/utilities/hotel-booking"
             element={
