@@ -1,3 +1,4 @@
+// src/pages/utilities/utilityData.ts
 import type { FlightOption, LocationOption } from "./utilityTypes";
 
 export const MOCK_USER_PHONE = "0862525038";
@@ -6,6 +7,38 @@ export const formatCurrencyVND = (value: number) =>
   value.toLocaleString("vi-VN") + " đ";
 
 export const validatePhoneNumber = (phone: string) => /^0\d{9}$/.test(phone);
+
+/**
+ * Auto detect telco theo prefix (demo rule).
+ * return: "viettel" | "vina" | "mobi" | "" (unknown)
+ */
+export const detectTelcoByPhone = (phone: string): string => {
+  const p = (phone || "").replace(/\D/g, "");
+  if (!/^0\d{9}$/.test(p)) return "";
+
+  const viettel = [
+    "086",
+    "096",
+    "097",
+    "098",
+    "032",
+    "033",
+    "034",
+    "035",
+    "036",
+    "037",
+    "038",
+    "039",
+  ];
+  const vina = ["088", "091", "094", "081", "082", "083", "084", "085"];
+  const mobi = ["089", "090", "093", "070", "076", "077", "078", "079"];
+
+  const prefix3 = p.slice(0, 3);
+  if (viettel.includes(prefix3)) return "viettel";
+  if (vina.includes(prefix3)) return "vina";
+  if (mobi.includes(prefix3)) return "mobi";
+  return "";
+};
 
 export const mockFlights: FlightOption[] = [
   {
@@ -192,6 +225,7 @@ export const ELECTRIC_PROVIDERS = [
   "Điện lực toàn quốc",
   "Hợp tác xã điện",
 ];
+
 export const WATER_PROVIDERS = [
   "Cấp nước Bình Thuận",
   "Cấp nước Bình Phước",
@@ -206,17 +240,268 @@ export const WATER_PROVIDERS = [
   "Cấp nước Tiền Giang",
   "Cấp nước Trà Vinh",
 ];
+
 export const MOBILE_PROVIDERS = ["Viettel", "VinaPhone", "MobiFone"];
 
+/**
+ * Dữ liệu nạp tiền
+ */
 export const PHONE_TOPUP_AMOUNTS = [
   10000, 20000, 30000, 50000, 100000, 200000, 300000, 500000, 1000000,
 ];
 
+export const TOPUP_AMOUNTS = PHONE_TOPUP_AMOUNTS;
+
+/**
+ * Data packs cơ bản (để tương thích code cũ nếu có)
+ */
 export const DATA_PACKS = [
   { id: "ks6h", name: "3GB - 6 giờ", code: "KS6H", price: 10000 },
   { id: "ks8", name: "1.5GB - 1 ngày", code: "KS8", price: 8000 },
   { id: "ks12", name: "2.5GB - 1 ngày", code: "KS12", price: 12000 },
   { id: "ks20", name: "4GB - 3 ngày", code: "KS20", price: 20000 },
+];
+
+/**
+ * UI packs (đúng format UtilityDataPack.tsx)
+ */
+export type DataPackUI = {
+  id: string;
+  name: string;
+  price: number;
+  description: string;
+  telco?: "viettel" | "vina" | "mobi" | "all";
+};
+
+/**
+ * ✅ [PATCH-5][PATCH-6] Chia nhóm gói data đúng yêu cầu:
+ * - Gói data phổ biến
+ * - Gói Data ngày
+ * - Gói Data 5G
+ * - Gói Data tháng
+ * - Gói cước TV360
+ *
+ * Lưu ý: Đây là data demo để render UI, không ảnh hưởng luồng khác.
+ */
+export const DATA_PACK_GROUPS: {
+  key: string;
+  title: string;
+  packs: DataPackUI[];
+}[] = [
+  // 1) Popular
+  {
+    key: "popular",
+    title: "Gói Data phổ biến",
+    packs: [
+      {
+        id: "pop-3gb-6h",
+        name: "3GB - 6 giờ",
+        price: 10000,
+        description: "3GB • 6 giờ • Phù hợp dùng nhanh",
+        telco: "all",
+      },
+      {
+        id: "pop-12gb-1d",
+        name: "1.2GB - 1 ngày",
+        price: 8000,
+        description: "1.2GB • 1 ngày • Giá tiết kiệm",
+        telco: "all",
+      },
+      {
+        id: "pop-4gb-3d",
+        name: "4GB - 3 ngày",
+        price: 20000,
+        description: "4GB • 3 ngày • Dùng ổn định",
+        telco: "all",
+      },
+      {
+        id: "pop-8gb-7d",
+        name: "8GB - 7 ngày",
+        price: 36000,
+        description: "8GB • 7 ngày • Dành cho người dùng nhiều",
+        telco: "all",
+      },
+      {
+        id: "pop-1n-tmdt",
+        name: "1N_TMDT",
+        price: 10000,
+        description: "5GB • 1 ngày • Gói theo nhu cầu",
+        telco: "all",
+      },
+      {
+        id: "pop-ks110",
+        name: "KS110",
+        price: 110000,
+        description: "30GB • 30 ngày • Gói dài ngày",
+        telco: "all",
+      },
+      {
+        id: "pop-5g13ks",
+        name: "5G13KS",
+        price: 13000,
+        description: "7GB • 1 ngày • Data tốc độ cao",
+        telco: "all",
+      },
+    ],
+  },
+
+  // 2) Daily
+  {
+    key: "daily",
+    title: "Gói Data ngày",
+    packs: [
+      {
+        id: "day-25gb",
+        name: "2.5GB - 1 ngày",
+        price: 12000,
+        description: "2.5GB • 1 ngày",
+        telco: "all",
+      },
+      {
+        id: "day-vt1",
+        name: "VT1",
+        price: 50000,
+        description: "28GB • 7 ngày",
+        telco: "all",
+      },
+      {
+        id: "day-7n-tmdt",
+        name: "7N_TMDT",
+        price: 70000,
+        description: "35GB • 7 ngày",
+        telco: "all",
+      },
+    ],
+  },
+
+  // 3) 5G
+  {
+    key: "5g",
+    title: "Gói Data 5G",
+    packs: [
+      {
+        id: "5g-65gb-7d",
+        name: "65GB - 7 ngày",
+        price: 85000,
+        description: "65GB • 7 ngày • Data 5G",
+        telco: "all",
+      },
+      {
+        id: "5gmxh200",
+        name: "5GMXH200",
+        price: 200000,
+        description: "60GB • 30 ngày • Gói 5G MXH",
+        telco: "all",
+      },
+      {
+        id: "5gmxh230",
+        name: "5GMXH230",
+        price: 230000,
+        description: "30GB • 30 ngày • Gói 5G MXH",
+        telco: "all",
+      },
+    ],
+  },
+
+  // 4) Monthly
+  {
+    key: "monthly",
+    title: "Gói Data tháng",
+    packs: [
+      {
+        id: "ks145",
+        name: "KS145",
+        price: 145000,
+        description: "66GB • 30 ngày",
+        telco: "all",
+      },
+      {
+        id: "ks165",
+        name: "KS165",
+        price: 165000,
+        description: "90GB • 30 ngày",
+        telco: "all",
+      },
+      {
+        id: "5gvt6",
+        name: "5GVT6",
+        price: 250000,
+        description: "240GB • 30 ngày",
+        telco: "all",
+      },
+    ],
+  },
+
+  // 5) TV360
+  {
+    key: "tv360",
+    title: "Gói cước TV360",
+    packs: [
+      {
+        id: "vcine30",
+        name: "VCINE30",
+        price: 20000,
+        description: "20.000 VND • 30 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vcine90",
+        name: "VCINE90",
+        price: 60000,
+        description: "60.000 VND • 90 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vsport30",
+        name: "VSPORT30",
+        price: 30000,
+        description: "30.000 VND • 30 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vsport90",
+        name: "VSPORT90",
+        price: 90000,
+        description: "90.000 VND • 90 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "standard7",
+        name: "STANDARD7",
+        price: 15000,
+        description: "15.000 VND • 7 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "standard30",
+        name: "STANDARD30",
+        price: 50000,
+        description: "50.000 VND • 30 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vip7",
+        name: "VIP7",
+        price: 25000,
+        description: "25.000 VND • 7 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vip30",
+        name: "VIP30",
+        price: 80000,
+        description: "80.000 VND • 30 ngày • TV360",
+        telco: "all",
+      },
+      {
+        id: "vip90",
+        name: "VIP90",
+        price: 220000,
+        description: "220.000 VND • 90 ngày • TV360",
+        telco: "all",
+      },
+    ],
+  },
 ];
 
 export const RECENT_MOBILE_TRANSACTIONS = [

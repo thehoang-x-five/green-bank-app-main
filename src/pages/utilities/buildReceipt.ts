@@ -116,15 +116,11 @@ export function buildMovieReceipt(
 }
 
 export function buildHotelReceipt(
-  formData: UtilityFormData,
-  options?: { nights?: number; roomName?: string; nightlyRate?: number }
+  formData: UtilityFormData
 ): UtilityResultState {
   const now = new Date();
   const rooms = Number(formData.hotelRooms || "1");
-  const safeRooms = isNaN(rooms) ? 1 : rooms || 1;
-  const nights = options?.nights && options.nights > 0 ? options.nights : 1;
-  const nightlyRate = options?.nightlyRate ?? 800000;
-  const amountNumber = nightlyRate * safeRooms * nights;
+  const amountNumber = 800000 * (isNaN(rooms) ? 1 : rooms);
   const amount = amountNumber.toLocaleString("vi-VN");
   return {
     flow: "hotel",
@@ -137,10 +133,8 @@ export function buildHotelReceipt(
       { label: "Thành phố / Khu vực", value: formData.hotelCity },
       { label: "Ngày nhận phòng", value: formData.hotelCheckIn },
       { label: "Ngày trả phòng", value: formData.hotelCheckOut },
-      { label: "Số đêm", value: String(nights) },
-      { label: "Hạng phòng", value: options?.roomName ?? "Tiêu chuẩn" },
       { label: "Số khách", value: String(formData.hotelGuests || "1") },
-      { label: "Số phòng", value: String(safeRooms || 1) },
+      { label: "Số phòng", value: String(rooms || 1) },
     ],
   };
 }
