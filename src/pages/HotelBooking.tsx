@@ -157,7 +157,8 @@ export default function HotelBooking() {
       if (selectedProvince) {
         // Map province codes to hotel cityKeys
         const provinceToHotelKey: Record<string, string> = {
-          "01": "VN_HN",   // Hà Nội
+          "1": "VN_HN",    // Hà Nội
+          "01": "VN_HN",   // Hà Nội (with leading zero)
           "79": "VN_HCM",  // TP.HCM
           "48": "VN_DN",   // Đà Nẵng
           "56": "VN_NT",   // Khánh Hòa (Nha Trang)
@@ -459,7 +460,7 @@ export default function HotelBooking() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate(-1)}
+              onClick={() => navigate("/home")}
               className="flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-2.5 py-2.5 text-sm font-semibold hover:bg-white/20"
             >
               <ArrowLeft size={18} />
@@ -473,7 +474,7 @@ export default function HotelBooking() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-5xl -mt-5  px-4 md:px-6">
+      <div className="mx-auto w-full max-w-8xl -mt-3.5  px-4 md:px-6">
         <Card className="overflow-hidden shadow-lg">
           <div className="bg-gradient-to-r from-primary to-accent px-4 py-4 text-primary-foreground">
             <div className="flex items-center justify-between">
@@ -483,7 +484,7 @@ export default function HotelBooking() {
               </div>
               <Badge className="border-white/40 bg-white/15 text-primary-foreground">An toàn</Badge>
             </div>
-            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center  md:justify-center md:gap-4">
               {[
                 { label: "Tìm phòng", icon: MapPin, id: 1 },
                 { label: "Chọn phòng", icon: BedDouble, id: 2 },
@@ -507,9 +508,7 @@ export default function HotelBooking() {
                       {item.label}
                     </p>
                   </div>
-                  {idx < 2 && (
-                    <div className="hidden h-px flex-1 bg-gradient-to-r from-white/30 via-white/60 to-white/30 md:block" />
-                  )}
+                  <div className="hidden h-px flex-1 bg-gradient-to-r from-white/30 via-white/60 to-white/30 md:block" />
                 </div>
               ))}
             </div>
@@ -806,7 +805,7 @@ export default function HotelBooking() {
                 <p className="text-sm font-semibold">Danh sách khách sạn</p>
                 <Badge variant="secondary">{hotels.length} kết quả</Badge>
               </div>
-              <div className="space-y-3 max-h-[500px] overflow-y-auto scrollbar-hide flex-1">
+              <div className="space-y-3 max-h-[600px] overflow-y-auto scrollbar-hide flex-1">
                 {hotels.map((h) => (
                   <button
                     key={h.id}
@@ -843,107 +842,109 @@ export default function HotelBooking() {
             </Card>
 
             {/* Right column: Hotel images & Room selection */}
-            <div className="space-y-4">
+            <Card className="p-4 flex flex-col space-y-4">
               {/* Hotel Images Carousel */}
               {selectedHotel && (
-                <Card className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold flex items-center gap-2">
-                      <ImageIcon size={16} className="text-emerald-700" />
-                      Hình ảnh khách sạn
+                <>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold flex items-center gap-2">
+                        <ImageIcon size={16} className="text-emerald-700" />
+                        Hình ảnh khách sạn
+                      </p>
+                      <Badge variant="secondary">{selectedHotel.name}</Badge>
+                    </div>
+                    <div className="px-10">
+                      <Carousel className="w-full">
+                        <CarouselContent>
+                          {getHotelImages(selectedHotel.id).map((imgUrl, idx) => (
+                            <CarouselItem key={idx}>
+                              <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
+                                <img
+                                  src={imgUrl}
+                                  alt={`${selectedHotel.name} - Ảnh ${idx + 1}`}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                                <div className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-1 text-xs text-white">
+                                  {idx + 1} / 5
+                                </div>
+                              </div>
+                            </CarouselItem>
+                          ))}
+                        </CarouselContent>
+                        <CarouselPrevious />
+                        <CarouselNext />
+                      </Carousel>
+                    </div>
+                    <p className="text-xs text-center text-muted-foreground">
+                      Vuốt hoặc bấm mũi tên để xem thêm ảnh
                     </p>
-                    <Badge variant="secondary">{selectedHotel.name}</Badge>
                   </div>
-                  <div className="px-10">
-                    <Carousel className="w-full">
-                      <CarouselContent>
-                        {getHotelImages(selectedHotel.id).map((imgUrl, idx) => (
-                          <CarouselItem key={idx}>
-                            <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
-                              <img
-                                src={imgUrl}
-                                alt={`${selectedHotel.name} - Ảnh ${idx + 1}`}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                              />
-                              <div className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-1 text-xs text-white">
-                                {idx + 1} / 5
+
+                  <Separator />
+
+                  {/* Room Selection */}
+                  <div className="space-y-3 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">Chọn hạng phòng</p>
+                      <Badge variant="secondary">
+                        {loadingRooms ? "Đang tải..." : `${roomsOptions.length} lựa chọn`}
+                      </Badge>
+                    </div>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto scrollbar-hide">
+                      {roomsOptions.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRoom(r);
+                            setStep(3);
+                          }}
+                          className={`w-full rounded-xl border p-3 text-left transition ${
+                            selectedRoom?.id === r.id
+                              ? "border-emerald-500 bg-emerald-50"
+                              : "border-muted hover:border-emerald-200"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold">{r.name}</p>
+                              <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                {r.perks.map((perk) => (
+                                  <Badge key={perk} variant="outline" className="text-xs">
+                                    {perk}
+                                  </Badge>
+                                ))}
                               </div>
                             </div>
-                          </CarouselItem>
-                        ))}
-                      </CarouselContent>
-                      <CarouselPrevious />
-                      <CarouselNext />
-                    </Carousel>
-                  </div>
-                  <p className="text-xs text-center text-muted-foreground">
-                    Vuốt hoặc bấm mũi tên để xem thêm ảnh
-                  </p>
-                </Card>
-              )}
-
-              {/* Room Selection */}
-              {selectedHotel && (
-                <Card className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Chọn hạng phòng</p>
-                    <Badge variant="secondary">
-                      {loadingRooms ? "Đang tải..." : `${roomsOptions.length} lựa chọn`}
-                    </Badge>
-                  </div>
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto scrollbar-hide">
-                    {roomsOptions.map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedRoom(r);
-                          setStep(3);
-                        }}
-                        className={`w-full rounded-xl border p-3 text-left transition ${
-                          selectedRoom?.id === r.id
-                            ? "border-emerald-500 bg-emerald-50"
-                            : "border-muted hover:border-emerald-200"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-semibold">{r.name}</p>
-                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                              {r.perks.map((perk) => (
-                                <Badge key={perk} variant="outline" className="text-xs">
-                                  {perk}
-                                </Badge>
-                              ))}
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-emerald-700">
+                                {r.pricePerNight.toLocaleString("vi-VN")} ₫/đêm
+                              </p>
+                              {r.refundable && <p className="text-[11px] text-emerald-600">Hủy miễn phí</p>}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold text-emerald-700">
-                              {r.pricePerNight.toLocaleString("vi-VN")} ₫/đêm
-                            </p>
-                            {r.refundable && <p className="text-[11px] text-emerald-600">Hủy miễn phí</p>}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                    {!roomsOptions.length && !loadingRooms && (
-                      <p className="text-xs text-muted-foreground">Chọn khách sạn để xem hạng phòng.</p>
-                    )}
+                        </button>
+                      ))}
+                      {!roomsOptions.length && !loadingRooms && (
+                        <p className="text-xs text-muted-foreground">Chọn khách sạn để xem hạng phòng.</p>
+                      )}
+                    </div>
                   </div>
-                </Card>
+                </>
               )}
 
               {/* Placeholder when no hotel selected */}
               {!selectedHotel && (
-                <Card className="p-8 flex flex-col items-center justify-center text-center space-y-3 min-h-[300px]">
+                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
                   <ImageIcon size={48} className="text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">
                     Chọn một khách sạn từ danh sách bên trái để xem hình ảnh và hạng phòng
                   </p>
-                </Card>
+                </div>
               )}
-            </div>
+            </Card>
           </div>
         )}
 
@@ -1014,8 +1015,68 @@ export default function HotelBooking() {
               </div>
             </Card>
 
-            {/* Right column: Commitments & Notes - 3/10 */}
+            {/* Right column: Booking Info & Notes - 3/10 */}
             <Card className="p-4 space-y-4 md:col-span-3">
+              <div>
+                <p className="text-sm font-semibold mb-3">Thông tin đặt phòng</p>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="w-16 h-20 rounded overflow-hidden bg-muted flex-shrink-0">
+                      <img
+                        src={getHotelImages(selectedHotel.id)[0]}
+                        alt={selectedHotel.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm line-clamp-2">{selectedHotel.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {selectedHotel.stars}★ · {selectedHotel.rating ?? "--"} điểm
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Cách trung tâm {selectedHotel.distanceToCenterKm ?? 1.2} km
+                      </p>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Hạng phòng:</span>
+                      <span className="font-medium text-right">{selectedRoom.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Nhận phòng:</span>
+                      <span className="font-medium">{checkIn}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Trả phòng:</span>
+                      <span className="font-medium">{checkOut}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số đêm:</span>
+                      <span className="font-medium">{nights || 1} đêm</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Khách:</span>
+                      <span className="font-medium">{guests} khách</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Phòng:</span>
+                      <span className="font-medium">{rooms} phòng</span>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-semibold">Tổng cộng:</span>
+                    <span className="text-lg font-bold text-emerald-700">
+                      {totalPrice.toLocaleString("vi-VN")}đ
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <Separator />
+              
               <div>
                 <p className="text-sm font-semibold mb-3">Cam kết của chúng tôi</p>
                 <div className="space-y-3 text-xs">
@@ -1037,7 +1098,9 @@ export default function HotelBooking() {
                   </div>
                 </div>
               </div>
+              
               <Separator />
+              
               <div>
                 <p className="text-sm font-semibold mb-3">Lưu ý quan trọng</p>
                 <div className="space-y-2 text-xs text-muted-foreground">
@@ -1050,10 +1113,6 @@ export default function HotelBooking() {
                     <p className="text-amber-600 font-medium">⚠ Phòng này không hoàn tiền</p>
                   )}
                 </div>
-              </div>
-              <Separator />
-              <div className="text-xs text-muted-foreground">
-                <p>Bằng việc thanh toán, bạn đồng ý với <span className="text-primary underline cursor-pointer">Điều khoản sử dụng</span> và <span className="text-primary underline cursor-pointer">Chính sách bảo mật</span> của VietBank.</p>
               </div>
             </Card>
           </div>

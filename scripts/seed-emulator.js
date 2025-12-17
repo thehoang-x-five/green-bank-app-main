@@ -48,6 +48,28 @@ async function seedHotels() {
   }
 }
 
+async function seedMovies() {
+  console.log("Seeding movies, cinemas, and showtimes...");
+  try {
+    const response = await fetch(
+      `${EMULATOR_HOST}/${PROJECT_ID}/${REGION}/seedMoviesDemo?force=true`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-seed-secret": "dev-secret",
+        },
+      }
+    );
+    const data = await response.json();
+    console.log("✓ Movies seed result:", data);
+    return data;
+  } catch (err) {
+    console.error("✗ Failed to seed movies:", err.message);
+    return null;
+  }
+}
+
 async function seedBankPois() {
   console.log("Seeding bank POIs...");
   try {
@@ -80,6 +102,7 @@ async function main() {
   console.log("\n--- Seeding Data ---\n");
   
   await seedHotels();
+  await seedMovies();
   await seedBankPois();
   
   console.log("\n✅ Seed complete!\n");

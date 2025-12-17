@@ -41,7 +41,7 @@ const Home = () => {
     { icon: Wifi, label: "Nạp data 4G", path: "/utilities/data" },
     { icon: Shield, label: "Mua bảo hiểm", path: "/utilities/insurance" },
     { icon: Plane, label: "Vé máy bay", path: "/utilities/flight" },
-    { icon: Film, label: "Vé xem phim", path: "/utilities/movie" },
+    { icon: Film, label: "Vé xem phim", path: "/utilities/movie-booking" },
     { icon: Hotel, label: "Đặt phòng khách sạn", path: "/utilities/hotel-booking" },
     { icon: MoreHorizontal, label: "Xem tất cả", path: "/utilities/all" },
   ];

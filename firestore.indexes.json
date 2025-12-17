@@ -15,6 +15,32 @@
         { "fieldPath": "cityKey", "order": "ASCENDING" },
         { "fieldPath": "priceFrom", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "cinemas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cityKey", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "showtimes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cinemaId", "order": "ASCENDING" },
+        { "fieldPath": "movieId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "showtimes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cinemaId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" },
+        { "fieldPath": "time", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -74,6 +74,11 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior: none;
+  }
+  
+  html {
+    overscroll-behavior: none;
   }
 
   /* Hide scrollbar while keeping scroll functionality */

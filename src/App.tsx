@@ -41,6 +41,7 @@ import TransactionDetail from "@/pages/TransactionDetail";
 import UtilityBills from "@/pages/UtilityBills";
 import UtilityReceipt from "@/pages/UtilityReceipt";
 import HotelBooking from "@/pages/HotelBooking";
+import MovieBooking from "@/pages/MovieBooking";
 
 import BottomNav from "@/components/BottomNav";
 
@@ -311,6 +312,15 @@ const App = () => (
             element={
               <>
                 <HotelBooking />
+                <BottomNav />
+              </>
+            }
+          />
+          <Route
+            path="/utilities/movie-booking"
+            element={
+              <>
+                <MovieBooking />
                 <BottomNav />
               </>
             }

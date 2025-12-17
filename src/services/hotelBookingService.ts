@@ -83,40 +83,67 @@ export async function createHotelBooking(params: {
     throw new Error("Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng.");
   }
 
-  const total = params.room.pricePerNight * params.rooms * params.nights;
-  if (total >= 10_000_000) {
-    throw new Error("Giao dịch >= 10 triệu yêu cầu xác thực vân tay");
+  // Validate input parameters
+  if (!params.hotel || !params.room) {
+    throw new Error("Thông tin khách sạn và phòng không đầy đủ");
   }
+
+  if (params.guests < 1) {
+    throw new Error("Số khách phải ít nhất là 1");
+  }
+
+  if (params.rooms < 1) {
+    throw new Error("Số phòng phải ít nhất là 1");
+  }
+
+  if (params.nights < 1) {
+    throw new Error("Số đêm phải ít nhất là 1");
+  }
+
+  if (!params.accountNumber) {
+    throw new Error("Vui lòng chọn tài khoản thanh toán");
+  }
+
+  const total = params.room.pricePerNight * params.rooms * params.nights;
 
   let newBalance = 0;
 
-  // Skip RTDB transaction if no account number or RTDB not available
+  // Handle account transaction in Realtime Database
   if (params.accountNumber && params.accountNumber !== "DEMO") {
     const accountRef = ref(firebaseRtdb, `accounts/${params.accountNumber}`);
     
     // Check if account exists first
     const accountSnap = await get(accountRef);
-    if (accountSnap.exists()) {
-      newBalance = await runTransaction(accountRef, (current) => {
-        const acc = current as Record<string, unknown> | null;
-        if (!acc) {
-          return current; // Abort transaction
-        }
-        if (acc.status === "LOCKED") {
-          throw new Error("Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng.");
-        }
-        const balance = typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
-        if (balance < total) {
-          throw new Error(`Số dư không đủ. Cần ${total.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`);
-        }
-        return { ...acc, balance: balance - total };
-      }).then((res) => {
-        if (!res.committed) return 0;
-        const acc = res.snapshot.val() as Record<string, unknown>;
-        return typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
-      });
+    if (!accountSnap.exists()) {
+      throw new Error("Không tìm thấy tài khoản thanh toán");
     }
-    // If account doesn't exist, continue without RTDB transaction (newBalance = 0)
+    
+    const accountData = accountSnap.val() as Record<string, unknown>;
+    
+    // Verify account ownership
+    if (accountData.uid !== currentUser.uid) {
+      throw new Error("Bạn không có quyền sử dụng tài khoản này");
+    }
+    
+    // Run transaction to deduct balance
+    newBalance = await runTransaction(accountRef, (current) => {
+      const acc = current as Record<string, unknown> | null;
+      if (!acc) {
+        return current; // Abort transaction
+      }
+      if (acc.status === "LOCKED") {
+        throw new Error("Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng.");
+      }
+      const balance = typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+      if (balance < total) {
+        throw new Error(`Số dư không đủ. Cần ${total.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`);
+      }
+      return { ...acc, balance: balance - total };
+    }).then((res) => {
+      if (!res.committed) throw new Error("Giao dịch thất bại");
+      const acc = res.snapshot.val() as Record<string, unknown>;
+      return typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+    });
   }
 
   const txnRef = await addDoc(collection(fbDb, "transactions"), {

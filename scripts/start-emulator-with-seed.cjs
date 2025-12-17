@@ -131,13 +131,53 @@ async function seedBankPois() {
   });
 }
 
+async function seedMovies() {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({});
+    const url = new URL(`${FUNCTIONS_URL}/seedMoviesDemo?force=false`);
+
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-seed-secret": "dev-secret",
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const result = JSON.parse(data);
+            resolve(result);
+          } catch {
+            resolve({ raw: data });
+          }
+        });
+      }
+    );
+
+    req.on("error", reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
 async function main() {
   log("Starting Firebase Emulator with auto-seed...");
 
-  // Start emulator
+  // Start emulator with increased Java heap size to prevent buffer overflow
   const emulator = spawn("npx", ["firebase", "emulators:start", "--only=functions,firestore", "--project=vietbank-final"], {
     stdio: ["inherit", "pipe", "pipe"],
     shell: true,
+    env: {
+      ...process.env,
+      JAVA_TOOL_OPTIONS: "-Xmx2048m -XX:+UseG1GC"
+    }
   });
 
   let emulatorReady = false;
@@ -190,6 +230,18 @@ async function main() {
       }
     } catch (err) {
       log(`Failed to seed bank POIs: ${err.message}`, "error");
+    }
+
+    try {
+      log("Seeding cinemas, movies, and showtimes...");
+      const movieResult = await seedMovies();
+      if (movieResult.cinemas?.skipped) {
+        log("Movies already seeded, skipping", "warn");
+      } else {
+        log(`Cinemas: ${movieResult.cinemas?.inserted || 0}, Movies: ${movieResult.movies?.inserted || 0}, Showtimes: ${movieResult.showtimes?.inserted || 0}`, "success");
+      }
+    } catch (err) {
+      log(`Failed to seed movies: ${err.message}`, "error");
     }
 
     log("\n✅ Emulator running with seeded data!", "success");

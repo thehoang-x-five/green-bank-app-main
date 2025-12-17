@@ -311,19 +311,27 @@ exports.nearbyPois = onRequest(
         radiusM
       );
 
-      const overpassPois = await fetchOverpassNearby({
-        lat: data.lat,
-        lon: data.lon,
-        radiusM,
-        amenity,
-        limit,
-      });
+      // Overpass may timeout/504; fallback to local-only instead of 500
+      let overpassPois = [];
+      let source = "local+overpass";
+      try {
+        overpassPois = await fetchOverpassNearby({
+          lat: data.lat,
+          lon: data.lon,
+          radiusM,
+          amenity,
+          limit,
+        });
+      } catch (overpassErr) {
+        console.warn("Overpass failed, fallback to local POIs only:", overpassErr?.message || overpassErr);
+        source = "local-only";
+      }
 
       const pois = [...localPois, ...overpassPois];
 
-      await setCache(cacheKey, { pois, source: "overpass" }, DEFAULT_TTL_SEC);
+      await setCache(cacheKey, { pois, source }, DEFAULT_TTL_SEC);
 
-      res.status(200).json({ pois, cached: false, source: "overpass" });
+      res.status(200).json({ pois, cached: false, source });
     } catch (err) {
       console.error("nearbyPois error:", err?.message || err, err?.stack);
       if (err instanceof HttpsError) {
@@ -969,6 +977,173 @@ exports.seedHotelsDemo = onRequest(
     } catch (err) {
       console.error("seedHotelsDemo error:", err);
       res.status(500).json({ error: "Failed to seed hotels demo" });
+    }
+  }
+);
+
+/* =========================================================
+ * Dev helper: seedMoviesDemo (Firestore cinema/movie data)
+ * ========================================================= */
+const { CINEMA_DATA, MOVIE_DATA, generateShowtimes } = require("./cinemaSeedData");
+
+async function seedCinemasData(forceReseed = false) {
+  const cinemasRef = firestore.collection("cinemas");
+  
+  if (forceReseed) {
+    const existing = await cinemasRef.get();
+    const deleteBatch = firestore.batch();
+    existing.docs.forEach((doc) => deleteBatch.delete(doc.ref));
+    if (!existing.empty) await deleteBatch.commit();
+  } else {
+    const existing = await cinemasRef.limit(1).get();
+    if (!existing.empty) {
+      return { skipped: true, reason: "Collection not empty" };
+    }
+  }
+
+  const batch = firestore.batch();
+  const FieldValue = admin.firestore.FieldValue;
+  CINEMA_DATA.forEach((cinema, idx) => {
+    const ref = cinemasRef.doc(`cinema-${idx + 1}`);
+    batch.set(ref, {
+      ...cinema,
+      createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+    });
+  });
+  await batch.commit();
+  
+  return { skipped: false, inserted: CINEMA_DATA.length };
+}
+
+async function seedMoviesData(forceReseed = false) {
+  const moviesRef = firestore.collection("movies");
+  
+  if (forceReseed) {
+    const existing = await moviesRef.get();
+    const deleteBatch = firestore.batch();
+    existing.docs.forEach((doc) => deleteBatch.delete(doc.ref));
+    if (!existing.empty) await deleteBatch.commit();
+  } else {
+    const existing = await moviesRef.limit(1).get();
+    if (!existing.empty) {
+      return { skipped: true, reason: "Collection not empty" };
+    }
+  }
+
+  const batch = firestore.batch();
+  const FieldValue = admin.firestore.FieldValue;
+  MOVIE_DATA.forEach((movie, idx) => {
+    const ref = moviesRef.doc(`movie-${idx + 1}`);
+    batch.set(ref, {
+      ...movie,
+      createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+    });
+  });
+  await batch.commit();
+  
+  return { skipped: false, inserted: MOVIE_DATA.length };
+}
+
+async function seedShowtimesData(forceReseed = false) {
+  const showtimesRef = firestore.collection("showtimes");
+  
+  if (forceReseed) {
+    const existing = await showtimesRef.get();
+    const batchSize = 450;
+    let deleteCount = 0;
+    let deleteBatch = firestore.batch();
+    
+    for (const doc of existing.docs) {
+      deleteBatch.delete(doc.ref);
+      deleteCount++;
+      if (deleteCount % batchSize === 0) {
+        await deleteBatch.commit();
+        deleteBatch = firestore.batch();
+      }
+    }
+    if (deleteCount % batchSize !== 0 && deleteCount > 0) {
+      await deleteBatch.commit();
+    }
+  } else {
+    const existing = await showtimesRef.limit(1).get();
+    if (!existing.empty) {
+      return { skipped: true, reason: "Collection not empty" };
+    }
+  }
+
+  // Get cinema and movie IDs
+  const cinemasSnap = await firestore.collection("cinemas").get();
+  const moviesSnap = await firestore.collection("movies").get();
+  
+  if (cinemasSnap.empty || moviesSnap.empty) {
+    return { skipped: true, reason: "Cinemas or movies not seeded yet" };
+  }
+
+  const cinemas = cinemasSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const movies = moviesSnap.docs.map(d => ({ id: d.id }));
+  
+  const FieldValue = admin.firestore.FieldValue;
+  const batchSize = 450;
+  let inserted = 0;
+  let batch = firestore.batch();
+  let batchCount = 0;
+
+  // Generate showtimes for each cinema-movie combination
+  for (const cinema of cinemas) {
+    for (const movie of movies) {
+      const showtimes = generateShowtimes(cinema.id, movie.id, cinema.rooms, cinema.name);
+      
+      for (const showtime of showtimes) {
+        const ref = showtimesRef.doc();
+        batch.set(ref, {
+          ...showtime,
+          createdAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+        });
+        batchCount++;
+        inserted++;
+        
+        if (batchCount >= batchSize) {
+          await batch.commit();
+          batch = firestore.batch();
+          batchCount = 0;
+        }
+      }
+    }
+  }
+  
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+  
+  return { skipped: false, inserted };
+}
+
+exports.seedMoviesDemo = onRequest(
+  { region: FUNCTIONS_REGION },
+  async (req, res) => {
+    if (applyCors(req, res)) return;
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method not allowed" });
+      return;
+    }
+
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+    const seedSecret = process.env.SEED_SECRET || "dev-secret";
+    const providedSecret = req.get("x-seed-secret");
+    if (!isEmulator && providedSecret !== seedSecret) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    try {
+      const forceReseed = req.body?.force === true || req.query?.force === "true";
+      const cinemas = await seedCinemasData(forceReseed);
+      const movies = await seedMoviesData(forceReseed);
+      const showtimes = await seedShowtimesData(forceReseed);
+      res.status(200).json({ cinemas, movies, showtimes, forceReseed });
+    } catch (err) {
+      console.error("seedMoviesDemo error:", err);
+      res.status(500).json({ error: "Failed to seed movies demo", detail: err?.message });
     }
   }
 );
