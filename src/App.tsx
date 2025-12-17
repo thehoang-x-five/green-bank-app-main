@@ -329,22 +329,20 @@ const App = () => (
             }
           />
           <Route
-            path="/utilities/:type"
-            element={
-              <>
-                <UtilityBills />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
             path="/utilities/result"
             element={
               <>
                 <UtilityReceipt />
-                <BottomNav />
               </>
             }
+          />
+          <Route
+            path="/utilities/confirm"
+            element={<UtilityConfirmPayment />}
+          />
+          <Route
+            path="/utilities/mobile-history"
+            element={<UtilityMobileHistory />}
           />
 
           {/* Officer area */}
