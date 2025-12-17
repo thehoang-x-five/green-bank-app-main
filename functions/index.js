@@ -325,11 +325,11 @@ exports.nearbyPois = onRequest(
 
       res.status(200).json({ pois, cached: false, source: "overpass" });
     } catch (err) {
-      console.error("nearbyPois error:", err);
+      console.error("nearbyPois error:", err?.message || err, err?.stack);
       if (err instanceof HttpsError) {
         res.status(401).json({ error: err.message });
       } else {
-        res.status(500).json({ error: "Failed to fetch POI" });
+        res.status(500).json({ error: "Failed to fetch POI", detail: err?.message });
       }
     }
   }
@@ -343,6 +343,8 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
+  "http://localhost:5176",
   "http://localhost:5175",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
@@ -572,18 +574,73 @@ exports.reverseGeocode = onRequest(
       }
       const json = await resp.json();
       const address = json?.address || {};
+      const displayName = json?.display_name || "";
+      
       const city =
         address.city ||
         address.town ||
         address.village ||
-        address.municipality ||
+        address.municipality;
+      
+      let district =
         address.state_district ||
         address.county;
+      
+      // For Vietnam, special handling
+      if (address.country_code === "vn") {
+        const parts = displayName.split(",").map(p => p.trim());
+        
+        // Check if display_name contains a major province
+        const majorProvinces = [
+          "Thành phố Hồ Chí Minh", "Hà Nội", "Đà Nẵng", "Hải Phòng",
+          "Cần Thơ", "Biên Hòa", "Nha Trang", "Huế", "Vũng Tàu"
+        ];
+        
+        const hasProvince = parts.some(p => 
+          majorProvinces.some(mp => 
+            p.toLowerCase().includes(mp.toLowerCase()) ||
+            mp.toLowerCase().includes(p.toLowerCase())
+          )
+        );
+        
+        // If display_name has province AND city is different, then city is the district
+        if (hasProvince && city) {
+          const cityIsProvince = majorProvinces.some(mp => 
+            city.toLowerCase().includes(mp.toLowerCase()) ||
+            mp.toLowerCase().includes(city.toLowerCase())
+          );
+          
+          if (!cityIsProvince) {
+            // city is actually the district (e.g., "Thủ Đức", "Quận 7")
+            district = city;
+          }
+        }
+        
+        // Try to find explicit district markers in display_name
+        if (!district) {
+          const districtPart = parts.find(p => 
+            /^(Quận|Huyện|Thành phố|Thị xã)\s+/i.test(p)
+          );
+          if (districtPart) {
+            district = districtPart;
+          }
+        }
+        
+        // Fallback to suburb/neighbourhood if still no district
+        if (!district) {
+          district = address.suburb || address.neighbourhood;
+        }
+      } else {
+        // Non-Vietnam: use suburb/neighbourhood
+        district = district || address.suburb || address.neighbourhood;
+      }
+      
       const payload = {
         city: city || undefined,
+        district: district || undefined,
         state: address.state || address.region || undefined,
         country: address.country || undefined,
-        displayName: json?.display_name || undefined,
+        displayName: displayName || undefined,
       };
       await setApiCache(key, payload, SIX_HOURS_SEC);
       res.status(200).json(payload);
@@ -637,6 +694,19 @@ exports.getVnLocations = onRequest({ region: FUNCTIONS_REGION }, async (req, res
  * HTTP: Provinces Open API proxy
  * ========================================================= */
 const PROVINCES_API = "https://provinces.open-api.vn/api";
+const DVHCVN_CDN = "https://cdn.jsdelivr.net/gh/daohoangson/dvhcvn@master/data/dvhcvn.json";
+
+// Cache for DVHCVN data
+let dvhcvnCache = null;
+
+async function fetchDvhcvnData() {
+  if (dvhcvnCache) return dvhcvnCache;
+  const resp = await fetch(DVHCVN_CDN);
+  if (!resp.ok) throw new Error(`DVHCVN CDN failed ${resp.status}`);
+  const json = await resp.json();
+  dvhcvnCache = json.data || [];
+  return dvhcvnCache;
+}
 
 async function callProvincesApi(pathStr) {
   const resp = await fetch(`${PROVINCES_API}${pathStr}`, {
@@ -666,8 +736,21 @@ exports.getVnProvinces = onRequest({ region: FUNCTIONS_REGION }, async (req, res
     await setApiCache(cacheKey, data, ONE_DAY_SEC);
     res.status(200).json({ data, cached: false });
   } catch (err) {
-    console.error("getVnProvinces error:", err);
-    res.status(500).json({ error: "Failed to fetch provinces" });
+    console.warn("Provinces API failed, trying DVHCVN CDN:", err?.message);
+    // Fallback to DVHCVN CDN
+    try {
+      const dvhcvn = await fetchDvhcvnData();
+      const data = dvhcvn.map((p) => ({
+        code: p.level1_id,
+        name: p.name,
+        codename: p.name.toLowerCase().replace(/\s+/g, "_"),
+      }));
+      await setApiCache(cacheKey, data, ONE_DAY_SEC);
+      res.status(200).json({ data, cached: false, source: "dvhcvn" });
+    } catch (fallbackErr) {
+      console.error("DVHCVN CDN also failed:", fallbackErr?.message);
+      res.status(500).json({ error: "Failed to fetch provinces" });
+    }
   }
 });
 
@@ -694,8 +777,22 @@ exports.getVnDistricts = onRequest({ region: FUNCTIONS_REGION }, async (req, res
     await setApiCache(cacheKey, districts, ONE_DAY_SEC);
     res.status(200).json({ data: districts, cached: false });
   } catch (err) {
-    console.error("getVnDistricts error:", err);
-    res.status(500).json({ error: "Failed to fetch districts" });
+    console.warn("Provinces API failed for districts, trying DVHCVN CDN:", err?.message);
+    // Fallback to DVHCVN CDN
+    try {
+      const dvhcvn = await fetchDvhcvnData();
+      const province = dvhcvn.find((p) => p.level1_id === provinceCode);
+      const districts = (province?.level2s || []).map((d) => ({
+        code: d.level2_id,
+        name: d.name,
+        codename: d.name.toLowerCase().replace(/\s+/g, "_"),
+      }));
+      await setApiCache(cacheKey, districts, ONE_DAY_SEC);
+      res.status(200).json({ data: districts, cached: false, source: "dvhcvn" });
+    } catch (fallbackErr) {
+      console.error("DVHCVN CDN also failed:", fallbackErr?.message);
+      res.status(500).json({ error: "Failed to fetch districts" });
+    }
   }
 });
 

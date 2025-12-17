@@ -1,6 +1,6 @@
 // src/lib/firebase.ts
 import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, connectAuthEmulator, type Auth } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator, type Firestore } from "firebase/firestore";
 import { getDatabase, type Database } from "firebase/database";
 import {
@@ -39,8 +39,13 @@ if (
 ) {
   // eslint-disable-next-line no-console
   console.info("[firebase] Using local emulators (Functions + Firestore)");
-  connectFunctionsEmulator(fbFns, "127.0.0.1", 5002);
-  connectFirestoreEmulator(fbDb, "127.0.0.1", 8082);
+  // Only connect Auth emulator if explicitly enabled (user data is separate from production)
+  if (import.meta.env?.VITE_USE_AUTH_EMULATOR === "true") {
+    console.info("[firebase] Auth emulator enabled - you need to create users in emulator");
+    connectAuthEmulator(fbAuth, "http://127.0.0.1:9099", { disableWarnings: true });
+  }
+  connectFunctionsEmulator(fbFns, "127.0.0.1", 5001);
+  connectFirestoreEmulator(fbDb, "127.0.0.1", 8080);
 }
 
 export const functionsBaseUrl =

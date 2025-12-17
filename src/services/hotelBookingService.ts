@@ -85,12 +85,12 @@ export async function createHotelBooking(params: {
 
   const total = params.room.pricePerNight * params.rooms * params.nights;
   if (total >= 10_000_000) {
-    throw new Error("Giao dịch >= 10 triệu yêu cầu xác thực vân tay (demo)");
+    throw new Error("Giao dịch >= 10 triệu yêu cầu xác thực vân tay");
   }
 
   let newBalance = 0;
 
-  // Demo mode: skip RTDB transaction if no account number or RTDB not available
+  // Skip RTDB transaction if no account number or RTDB not available
   if (params.accountNumber && params.accountNumber !== "DEMO") {
     const accountRef = ref(firebaseRtdb, `accounts/${params.accountNumber}`);
     
@@ -116,7 +116,7 @@ export async function createHotelBooking(params: {
         return typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
       });
     }
-    // If account doesn't exist, continue with demo mode (newBalance = 0)
+    // If account doesn't exist, continue without RTDB transaction (newBalance = 0)
   }
 
   const txnRef = await addDoc(collection(fbDb, "transactions"), {

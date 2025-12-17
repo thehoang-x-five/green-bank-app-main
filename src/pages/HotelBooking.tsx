@@ -151,9 +151,37 @@ export default function HotelBooking() {
   }, [rooms, nights, selectedRoom]);
 
   const resolveCityKey = (): string => {
+    // For Vietnam: Map province code to hotel cityKey
+    // Hotels are seeded at province level with specific keys
+    if (locationMode === "vn") {
+      if (selectedProvince) {
+        // Map province codes to hotel cityKeys
+        const provinceToHotelKey: Record<string, string> = {
+          "01": "VN_HN",   // Hà Nội
+          "79": "VN_HCM",  // TP.HCM
+          "48": "VN_DN",   // Đà Nẵng
+          "56": "VN_NT",   // Khánh Hòa (Nha Trang)
+          "91": "VN_PQ",   // Kiên Giang (Phú Quốc)
+          "49": "VN_HA",   // Quảng Nam (Hội An)
+          "77": "VN_VT",   // Bà Rịa-Vũng Tàu
+          "68": "VN_DL",   // Lâm Đồng (Đà Lạt)
+          "92": "VN_CT",   // Cần Thơ
+          "31": "VN_HP",   // Hải Phòng
+        };
+        
+        const hotelKey = provinceToHotelKey[selectedProvince];
+        if (hotelKey) return hotelKey;
+        
+        // Fallback to VN_<code> if not mapped
+        return `VN_${selectedProvince}`;
+      }
+      
+      // Fallback to cityKey if already set
+      if (cityKey) return cityKey;
+    }
+    
+    // For international or fallback
     if (cityKey) return cityKey;
-    if (selectedDistrict) return `VN_${selectedDistrict}`;
-    if (selectedProvince) return `VN_${selectedProvince}`;
     const normalized = cityInput.trim().toLowerCase();
     if (CITY_KEY_MAP[normalized]) return CITY_KEY_MAP[normalized];
     return cityInput ? `INT_${cityInput.replace(/\s+/g, "_").toUpperCase()}` : "";
@@ -162,17 +190,146 @@ export default function HotelBooking() {
   const handleGeoSuggest = async () => {
     try {
       setLoadingGeo(true);
-      const perm = await Geolocation.requestPermissions();
-      if (perm?.location === "denied") throw new Error("Quyền vị trí bị từ chối");
-      const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
-      const result = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-      const city = result.city || result.state || result.country || "";
-      setCityInput(city);
-      setCityKey(city ? `INT_${city.replace(/\s+/g, "_").toUpperCase()}` : "");
+      
+      let lat: number, lon: number;
+      
+      // Try Capacitor Geolocation first (mobile)
+      try {
+        const perm = await Geolocation.requestPermissions();
+        if (perm?.location === "denied") throw new Error("Quyền vị trí bị từ chối");
+        const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+        lat = pos.coords.latitude;
+        lon = pos.coords.longitude;
+      } catch (capacitorErr) {
+        // Fallback to browser Geolocation API (web)
+        if (!navigator.geolocation) {
+          throw new Error("Trình duyệt không hỗ trợ GPS");
+        }
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
+        });
+        lat = pos.coords.latitude;
+        lon = pos.coords.longitude;
+      }
+      
+      // Reverse geocode to get location info
+      const result = await reverseGeocode(lat, lon);
+      const country = result.country || "";
+      const isVietnam = country.toLowerCase().includes("vietnam") || country.toLowerCase().includes("việt nam");
+      
+      if (isVietnam) {
+        // Vietnam - set province/city and district
+        setLocationMode("vn");
+        
+        const cityName = result.city || "";
+        const districtName = result.district || "";
+        
+        // First, try to match with province
+        const provinceName = result.state || cityName || "";
+        const matchedProvince = vnProvinces.find(
+          (p) => 
+            p.label.toLowerCase().includes(provinceName.toLowerCase()) || 
+            provinceName.toLowerCase().includes(p.label.toLowerCase())
+        );
+        
+        if (matchedProvince) {
+          setSelectedProvince(matchedProvince.key);
+          
+          // Load districts and try to match
+          try {
+            const districts = await getVnDistrictOptions(matchedProvince.key);
+            setVnDistricts(districts);
+            
+            // Try to match district with multiple fields
+            // cityName might be the district (e.g., "Thủ Đức", "Quận 7")
+            // districtName might have the district info
+            const searchTerms = [cityName, districtName].filter(Boolean);
+            let matchedDistrict = null;
+            
+            for (const term of searchTerms) {
+              matchedDistrict = districts.find(
+                (d) => 
+                  d.label.toLowerCase().includes(term.toLowerCase()) || 
+                  term.toLowerCase().includes(d.label.toLowerCase())
+              );
+              if (matchedDistrict) break;
+            }
+            
+            if (matchedDistrict) {
+              setSelectedDistrict(matchedDistrict.key);
+              setCityInput(matchedDistrict.label);
+              setCityKey(`VN_${matchedDistrict.key}`);
+            } else {
+              // No district match, just use province
+              setCityInput(matchedProvince.label);
+              setCityKey(`VN_${matchedProvince.key}`);
+            }
+          } catch (err) {
+            setVnDistricts([]);
+            setCityInput(matchedProvince.label);
+            setCityKey(`VN_${matchedProvince.key}`);
+          }
+        } else {
+          // No province match - try to find district by checking major cities
+          // Check HCM and Hanoi first (most common)
+          const majorCities = vnProvinces.filter(p => 
+            p.key === "SG" || p.key === "HN" || p.key === "DN"
+          );
+          
+          let foundMatch = false;
+          for (const province of majorCities) {
+            try {
+              const districts = await getVnDistrictOptions(province.key);
+              const matchedDistrict = districts.find(
+                (d) => 
+                  d.label.toLowerCase().includes(cityName.toLowerCase()) || 
+                  cityName.toLowerCase().includes(d.label.toLowerCase())
+              );
+              
+              if (matchedDistrict) {
+                setSelectedProvince(province.key);
+                setVnDistricts(districts);
+                setSelectedDistrict(matchedDistrict.key);
+                setCityInput(matchedDistrict.label);
+                setCityKey(`VN_${matchedDistrict.key}`);
+                foundMatch = true;
+                break;
+              }
+            } catch (err) {
+              continue;
+            }
+          }
+          
+          if (!foundMatch) {
+            // Default to Hanoi
+            setCityInput("Hà Nội");
+            setCityKey("VN_HN");
+          }
+        }
+      } else {
+        // International
+        setLocationMode("intl");
+        const city = result.city || result.state || country;
+        
+        // Try to match with international destinations
+        const matchedDest = intlDestinations.find(
+          (d) => d.label.toLowerCase().includes(city.toLowerCase()) || city.toLowerCase().includes(d.label.toLowerCase())
+        );
+        
+        if (matchedDest) {
+          setCityInput(matchedDest.label);
+          setCityKey(matchedDest.key);
+        } else {
+          // Use city name as-is
+          setCityInput(city);
+          setCityKey(city ? `INT_${city.replace(/\s+/g, "_").toUpperCase()}` : "");
+        }
+      }
+      
+      toast.success(`Đã phát hiện vị trí: ${result.displayName || "Không xác định"}`);
     } catch (err) {
       console.error(err);
-      setCityInput("Hà Nội");
-      setCityKey("VN_HN");
+      toast.error("Không thể lấy vị trí GPS. Vui lòng chọn thủ công.");
     } finally {
       setLoadingGeo(false);
     }
@@ -265,7 +422,7 @@ export default function HotelBooking() {
         checkOut,
         accountNumber: selectedAccount,
       });
-      toast.success("Thanh toán thành công (demo)");
+      toast.success("Thanh toán thành công");
       navigate("/utilities/result", {
         state: {
           result: {
@@ -303,10 +460,9 @@ export default function HotelBooking() {
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/20"
+              className="flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-2.5 py-2.5 text-sm font-semibold hover:bg-white/20"
             >
               <ArrowLeft size={18} />
-              Trở lại
             </button>
             <div className="leading-tight">
               <p className="text-xs opacity-80">Tiện ích – Du lịch & nghỉ dưỡng</p>
@@ -317,7 +473,7 @@ export default function HotelBooking() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-5xl -mt-5 mb-24 px-4 md:px-6">
+      <div className="mx-auto w-full max-w-5xl -mt-5  px-4 md:px-6">
         <Card className="overflow-hidden shadow-lg">
           <div className="bg-gradient-to-r from-primary to-accent px-4 py-4 text-primary-foreground">
             <div className="flex items-center justify-between">
@@ -369,9 +525,12 @@ export default function HotelBooking() {
                     variant={locationMode === "vn" ? "default" : "outline"}
                     onClick={() => {
                       setLocationMode("vn");
-                      // Clear international fields when switching to VN
+                      // Clear all fields when switching to VN
                       setCityInput("");
                       setCityKey("");
+                      setSelectedProvince("");
+                      setSelectedDistrict("");
+                      setVnDistricts([]);
                     }}
                   >
                     Việt Nam
@@ -381,7 +540,9 @@ export default function HotelBooking() {
                     variant={locationMode === "intl" ? "default" : "outline"}
                     onClick={() => {
                       setLocationMode("intl");
-                      // Clear VN fields when switching to international
+                      // Clear all fields when switching to international
+                      setCityInput("");
+                      setCityKey("");
                       setSelectedProvince("");
                       setSelectedDistrict("");
                       setVnDistricts([]);
@@ -627,10 +788,7 @@ export default function HotelBooking() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="text-xs text-muted-foreground">
-                  Hỗ trợ demo: dữ liệu khách sạn mẫu Firestore, không gọi API trả phí.
-                </div>
+              <div className="flex flex-col gap-3 ml-auto md:flex-row md:items-center md:justify-between">
                 <Button size="lg" onClick={handleSearch} disabled={loadingSearch}>
                   <Search size={16} className="mr-2" />
                   {loadingSearch ? "Đang tìm..." : "Tìm nhanh"}
@@ -792,10 +950,9 @@ export default function HotelBooking() {
         {step === 3 && selectedHotel && selectedRoom && (
           <div className="mt-4 grid gap-4 md:grid-cols-10">
             {/* Left column: Payment confirmation - 7/10 */}
-            <Card className="p-4 space-y-3 md:col-span-7">
+            <Card className="p-4 space-y-3 md:col-span-7 flex flex-col">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">Xác nhận & thanh toán</p>
-                <Badge variant="secondary">Demo</Badge>
               </div>
               <div className="space-y-2 rounded-xl border p-3 text-sm">
                 <div className="flex items-center justify-between">
@@ -847,7 +1004,7 @@ export default function HotelBooking() {
                   <p className="text-xs text-muted-foreground">Chưa có tài khoản</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 mt-auto pt-3">
                 <Button variant="outline" onClick={() => setStep(2)}>
                   Quay lại bước 2
                 </Button>
