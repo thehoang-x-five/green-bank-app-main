@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Info,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -132,10 +133,12 @@ const SupportHelp = () => {
   );
 
   const handleCallHotline = () => {
+    // Thực tế: mở tel:1900xxxx
     toast.success("Đang kết nối tổng đài 1900 1234 (demo)");
   };
 
   const handleSendEmail = () => {
+    // Thực tế: mở mailto:
     toast.info("Mở ứng dụng email tới support@vietbank.com (demo)");
   };
 
@@ -378,6 +381,7 @@ const SupportHelp = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      {/* Header */}
       <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
         <div className="flex items-center justify-between">
           <button
@@ -394,6 +398,7 @@ const SupportHelp = () => {
       </div>
 
       <div className="px-6 -mt-4 space-y-4">
+        {/* Kênh liên hệ nhanh */}
         <Card className="p-5 space-y-3">
           <h2 className="text-sm font-semibold mb-1">Liên hệ nhanh</h2>
 
@@ -448,6 +453,7 @@ const SupportHelp = () => {
           </div>
         </Card>
 
+        {/* Các vấn đề thường gặp / FAQ */}
         <Card className="p-5 space-y-2">
           <h2 className="text-sm font-semibold mb-2">Câu hỏi thường gặp</h2>
 
@@ -473,6 +479,7 @@ const SupportHelp = () => {
           ))}
         </Card>
 
+        {/* Hỗ trợ giao dịch & khiếu nại */}
         <Card className="p-5 space-y-3">
           <h2 className="text-sm font-semibold mb-1">
             Hỗ trợ giao dịch & khiếu nại

@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import DevSeedOfficersPage from "@/pages/DevSeedOfficers";
+import TransferBiometricConfirm from "@/pages/TransferBiometricConfirm";
+
 
 // Auth & common
 import Login from "@/pages/Login";
@@ -320,10 +322,10 @@ const App = () => (
             }
           />
           <Route
-            path="/utilities/movie-booking"
+            path="/utilities/:type"
             element={
               <>
-                <MovieBooking />
+                <UtilityBills />
                 <BottomNav />
               </>
             }
@@ -333,6 +335,7 @@ const App = () => (
             element={
               <>
                 <UtilityReceipt />
+                <BottomNav />
               </>
             }
           />
@@ -374,6 +377,18 @@ const App = () => (
             path="/officer/ekyc/:id"
             element={<OfficerEKYCDetailPage />}
           />
+          <Route
+            path="/transfer/biometric"
+            element={
+              <>
+                <TransferBiometricConfirm />
+                <BottomNav />
+              </>
+            }
+          />
+
+          <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
+
 
           {/* ✅ OTP transfer route */}
           <Route path="/transfer/otp" element={<TransferOtpConfirm />} />

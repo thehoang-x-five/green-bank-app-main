@@ -11,6 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
+import { firebaseAuth } from "@/lib/firebase";
+import { runBiometricVerification } from "@/services/biometricService";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  loginWithBiometric,
+  isBiometricLoginEnabled,
+} from "@/services/authService";
+
 import {
   Fingerprint,
   Eye,
@@ -18,7 +26,7 @@ import {
   ShieldCheck,
   Mail,
   IdCard,
-  Camera,
+  Camera as CameraIcon,
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,7 +38,15 @@ import {
 } from "@/services/authService";
 
 import { sendOtp, verifyOtp } from "@/services/otpService";
-import { uploadEkycImage, saveEkycInfo } from "@/services/ekycService";
+import { uploadEkycImage, saveEkycInfoByUid } from "@/services/ekycService";
+import { Capacitor } from "@capacitor/core";
+import {
+  Camera,
+  CameraDirection,
+  CameraResultType,
+  CameraSource,
+} from "@capacitor/camera";
+
 
 type RegisterStep = 1 | 2 | 3;
 
@@ -45,6 +61,7 @@ const getFirebaseErrorCode = (error: unknown): string | undefined => {
 const Login = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const BIO_ENABLED_KEY = "vietbank_bio_enabled";
 
   // mode=register => mở sẵn tab đăng ký
   const modeParam = searchParams.get("mode");
@@ -107,6 +124,30 @@ const Login = () => {
   const [uploadingFront, setUploadingFront] = useState(false);
   const [uploadingBack, setUploadingBack] = useState(false);
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
+
+  // platform: web / android / ios
+const isNative = Capacitor.isNativePlatform();
+
+// Loại ảnh eKYC dùng chung
+type EkycImageKind = "frontId" | "backId" | "selfie";
+
+// Chuyển dataURL (base64) từ Camera thành File để reuse uploadEkycImage
+const dataUrlToFile = (dataUrl: string, fileName: string): File => {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/data:(.*);base64/);
+  const mimeType = mimeMatch?.[1] ?? "image/jpeg";
+
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return new File([bytes], fileName, { type: mimeType });
+};
+
 
   // --------- Helpers validate ---------
 
@@ -258,6 +299,89 @@ const Login = () => {
     return normalized;
   };
 
+  // Chụp ảnh eKYC bằng camera (native), fallback input file trên web
+const handleCaptureEkyc = async (kind: EkycImageKind) => {
+  // Web: vẫn dùng input file như cũ
+  if (!isNative) {
+    if (kind === "frontId" && frontIdInputRef.current) {
+      frontIdInputRef.current.click();
+    } else if (kind === "backId" && backIdInputRef.current) {
+      backIdInputRef.current.click();
+    } else if (kind === "selfie" && selfieInputRef.current) {
+      selfieInputRef.current.click();
+    }
+    return;
+  }
+
+  const email = ensureEmailForEkyc();
+  if (!email) return;
+
+  const isSelfie = kind === "selfie";
+
+  try {
+    if (kind === "frontId") setUploadingFront(true);
+    if (kind === "backId") setUploadingBack(true);
+    if (kind === "selfie") setUploadingSelfie(true);
+
+    const photo = await Camera.getPhoto({
+      source: CameraSource.Camera,
+      direction: isSelfie ? CameraDirection.Front : CameraDirection.Rear,
+      resultType: CameraResultType.DataUrl,
+      quality: 70,
+      // các option khác để mặc định cho khỏi lỗi type
+    });
+
+    if (!photo.dataUrl) {
+      toast.error("Không chụp được ảnh. Vui lòng thử lại.");
+      return;
+    }
+
+    const fileName = `${kind}-${Date.now()}.jpeg`;
+    const file = dataUrlToFile(photo.dataUrl, fileName);
+
+    const url = await uploadEkycImage(email, kind, file);
+
+    setRegisterData((prev) => {
+      if (kind === "frontId") {
+        return {
+          ...prev,
+          frontId: "Đã tải CCCD mặt trước",
+          frontIdUrl: url,
+        };
+      }
+      if (kind === "backId") {
+        return {
+          ...prev,
+          backId: "Đã tải CCCD mặt sau",
+          backIdUrl: url,
+        };
+      }
+      // selfie
+      return {
+        ...prev,
+        selfieStatus: "Đã tải ảnh khuôn mặt",
+        selfieUrl: url,
+      };
+    });
+
+    if (kind === "frontId") {
+      toast.success("Chụp CCCD mặt trước thành công");
+    } else if (kind === "backId") {
+      toast.success("Chụp CCCD mặt sau thành công");
+    } else {
+      toast.success("Chụp ảnh khuôn mặt thành công");
+    }
+  } catch (error) {
+    console.error("Capture eKYC error:", error);
+    toast.error("Không thể chụp ảnh. Vui lòng thử lại.");
+  } finally {
+    if (kind === "frontId") setUploadingFront(false);
+    if (kind === "backId") setUploadingBack(false);
+    if (kind === "selfie") setUploadingSelfie(false);
+  }
+};
+
+
   // --------- Login (Firebase) ---------
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -272,6 +396,8 @@ const Login = () => {
 
     try {
       const { profile } = await loginWithEmail(email, loginData.password);
+      localStorage.setItem("vietbank_bio_enabled", "1"); // optional nhưng giờ authService đã set rồi
+
 
       // Role lấy từ profile (nếu chưa có thì coi như CUSTOMER)
       const role = profile?.role ?? "CUSTOMER";
@@ -310,10 +436,28 @@ const Login = () => {
     }
   };
 
-  const handleBiometricLogin = () => {
-    toast.info("Giả lập đăng nhập nhanh bằng vân tay (demo)");
-    navigate("/home");
-  };
+  const handleBiometricLogin = async (): Promise<void> => {
+  try {
+    const { profile } = await loginWithBiometric();
+
+    const role = profile?.role ?? "CUSTOMER";
+
+    toast.success(
+      role === "OFFICER"
+        ? "Đăng nhập vân tay (nhân viên) thành công"
+        : "Đăng nhập vân tay (khách hàng) thành công"
+    );
+
+    navigate(role === "OFFICER" ? "/officer" : "/home");
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Có lỗi khi đăng nhập vân tay.";
+    toast.error(message);
+    console.error("[handleBiometricLogin]", err);
+  }
+};
+
+
 
   const handleForgotPassword = async () => {
     const trimmedUsername = loginData.username.trim();
@@ -592,46 +736,47 @@ const Login = () => {
       // Email dùng để tạo tài khoản đăng nhập chính là email Bước 1
       const normalizedEmail = normalizeEmail(registerData.email);
 
-      try {
-        // Tạm thời vẫn lưu thông tin eKYC cơ bản theo email.
-        // Sau khi sửa authService / customerProfiles sẽ lưu đầy đủ + trạng thái eKYC = PENDING.
-        await saveEkycInfo(normalizedEmail, {
-          fullName: registerData.fullName.trim(),
-          dob: registerData.dob.trim(),
-          nationalId: registerData.nationalId.trim(),
-          address: registerData.address.trim(),
-          gender: registerData.gender,
-          idIssueDate: registerData.idIssueDate.trim(),
-        });
+try {
+  // ✅ 1) Đăng ký tài khoản trước để chắc chắn có UID trong users/{uid}
+  const result = await registerCustomerAccount(
+    normalizedEmail,
+    registerData.password,
+    registerData.fullName.trim(), // dùng HỌ TÊN làm tên hiển thị
+    pinTrimmed,
+    {
+      phone: registerData.phone.trim(),
+      gender: registerData.gender,
+      dob: registerData.dob.trim(),
+      nationalId: registerData.nationalId.trim(),
+      idIssueDate: registerData.idIssueDate.trim(),
 
-        // Đăng ký tài khoản + tự sinh số tài khoản thanh toán
-        const result = await registerCustomerAccount(
-          normalizedEmail,
-          registerData.password,
-          registerData.fullName.trim(), // dùng HỌ TÊN làm tên hiển thị
-          pinTrimmed,
-          {
-            phone: registerData.phone.trim(),
-            gender: registerData.gender,
-            dob: registerData.dob.trim(),
-            nationalId: registerData.nationalId.trim(),
-            idIssueDate: registerData.idIssueDate.trim(),
+      // map đúng tên field trong AppUserProfile
+      placeOfIssue: registerData.idIssuePlace.trim(),        // nơi cấp CCCD
+      permanentAddress: registerData.address.trim(),         // địa chỉ thường trú
+      contactAddress: registerData.contactAddress.trim(),    // địa chỉ liên hệ / tạm trú
 
-            // map đúng tên field trong AppUserProfile
-            placeOfIssue: registerData.idIssuePlace.trim(),        // nơi cấp CCCD
-            permanentAddress: registerData.address.trim(),         // địa chỉ thường trú
-            contactAddress: registerData.contactAddress.trim(),    // địa chỉ liên hệ / tạm trú
+      // lưu luôn url ảnh eKYC vào profile
+      frontIdUrl: registerData.frontIdUrl || null,
+      backIdUrl: registerData.backIdUrl || null,
+      selfieUrl: registerData.selfieUrl || null,
+    },
+    {
+      // nếu đi từ màn nhân viên thì tạo user mà KHÔNG đổi session
+      createdByOfficer: sourceParam === "officer",
+    }
+  );
 
-            // lưu luôn url ảnh eKYC vào profile
-            frontIdUrl: registerData.frontIdUrl || null,
-            backIdUrl: registerData.backIdUrl || null,
-            selfieUrl: registerData.selfieUrl || null,
-          },
-          {
-            // nếu đi từ màn nhân viên thì tạo user mà KHÔNG đổi session
-            createdByOfficer: sourceParam === "officer",
-          }
-        );
+  // ✅ 2) Sau khi đã có UID → lưu session eKYC + submittedAt + đồng bộ users/{uid}/ekycSubmittedAt
+  await saveEkycInfoByUid(result.profile.uid, normalizedEmail, {
+    fullName: registerData.fullName.trim(),
+    dob: registerData.dob.trim(),
+    nationalId: registerData.nationalId.trim(),
+    address: registerData.address.trim(),
+    gender: registerData.gender,
+    idIssueDate: registerData.idIssueDate.trim(),
+  });
+
+        
 
         if (sourceParam === "officer") {
           // FLOW NHÂN VIÊN TẠO KHÁCH MỚI
@@ -658,18 +803,37 @@ const Login = () => {
         }
 
       } catch (error: unknown) {
-        console.error("Firebase register error:", error);
-        const code = getFirebaseErrorCode(error);
+          console.error("Firebase login error:", error);
 
-        let message = "Đăng ký thất bại. Vui lòng thử lại.";
+          // ✅ Ưu tiên message custom từ authService (đếm lần còn lại / khóa tài khoản)
+          const serviceMessage =
+            error instanceof Error && error.message ? error.message.trim() : "";
 
-        if (code === "auth/email-already-in-use") {
-          message =
-            "Email này đã được sử dụng. Vui lòng dùng email khác hoặc đăng nhập.";
+          if (serviceMessage) {
+            toast.error(serviceMessage);
+            return;
+          }
+
+          // fallback: nếu không có message custom thì mới map theo Firebase code
+          const code = getFirebaseErrorCode(error);
+
+          let message =
+            "Đăng nhập thất bại. Vui lòng kiểm tra lại email và mật khẩu.";
+
+          if (
+            code === "auth/invalid-credential" ||
+            code === "auth/wrong-password"
+          ) {
+            message = "Email hoặc mật khẩu không đúng.";
+          } else if (code === "auth/user-not-found") {
+            message = "Tài khoản không tồn tại.";
+          } else if (code === "auth/too-many-requests") {
+            message = "Bạn đã đăng nhập sai nhiều lần. Vui lòng thử lại sau ít phút.";
+          }
+
+          toast.error(message);
         }
 
-        toast.error(message);
-      }
     }
   };
 
@@ -809,7 +973,7 @@ const Login = () => {
                 type="button"
                 variant="outline"
                 className="h-24 flex items-center justify-center p-0 overflow-hidden"
-                onClick={() => frontIdInputRef.current?.click()}
+                onClick={() => handleCaptureEkyc("frontId")}
                 disabled={uploadingFront}
               >
                 {uploadingFront ? (
@@ -835,7 +999,7 @@ const Login = () => {
                 type="button"
                 variant="outline"
                 className="h-24 flex items-center justify-center p-0 overflow-hidden"
-                onClick={() => backIdInputRef.current?.click()}
+                onClick={() => handleCaptureEkyc("backId")}
                 disabled={uploadingBack}
               >
                 {uploadingBack ? (
@@ -862,7 +1026,7 @@ const Login = () => {
                 variant="outline"
                 className="p-0 border border-dashed border-muted-foreground/60 rounded-xl bg-muted/40 hover:bg-muted/70
                     w-28 h-40 flex items-center justify-center overflow-hidden"
-                onClick={() => selfieInputRef.current?.click()}
+                onClick={() => handleCaptureEkyc("selfie")}
                 disabled={uploadingSelfie}
               >
                 {uploadingSelfie ? (
@@ -875,7 +1039,7 @@ const Login = () => {
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-1 text-xs text-muted-foreground">
-                    <Camera className="h-4 w-4" />
+                    <CameraIcon className="h-4 w-4" />
                     <span>Ảnh khuôn mặt</span>
                   </div>
                 )}
@@ -1279,7 +1443,7 @@ const Login = () => {
                 onClick={handleBiometricLogin}
               >
                 <Fingerprint className="h-4 w-4" />
-                <span>Đăng nhập nhanh bằng vân tay (demo)</span>
+                <span>Đăng nhập nhanh bằng vân tay</span>
               </Button>
             </form>
           </TabsContent>

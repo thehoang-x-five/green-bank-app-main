@@ -21,17 +21,58 @@ import { ref, get } from "firebase/database";
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
 import type { AppUserProfile } from "@/services/authService";
 
-const formatGender = (g?: string | null) => {
-  switch (g) {
-    case "MALE":
-      return "Nam";
-    case "FEMALE":
-      return "Nữ";
-    case "OTHER":
-      return "Khác";
-    default:
-      return "Chưa cập nhật";
+// ✅ Dialog preview ảnh
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+// ✅ FIX: hỗ trợ nhiều kiểu lưu gender trong DB (MALE/FEMALE/OTHER, male/female/other, nam/nữ, 0/1...)
+const formatGender = (g?: unknown) => {
+  if (g === null || g === undefined) return "Chưa cập nhật";
+
+  const raw = String(g).trim();
+  if (!raw) return "Chưa cập nhật";
+
+  const lower = raw.toLowerCase();
+
+  // Nam
+  if (
+    raw === "MALE" ||
+    lower === "male" ||
+    lower === "nam" ||
+    lower === "m" ||
+    lower === "1"
+  ) {
+    return "Nam";
   }
+
+  // Nữ
+  if (
+    raw === "FEMALE" ||
+    lower === "female" ||
+    lower === "nu" ||
+    lower === "nữ" ||
+    lower === "f" ||
+    lower === "0"
+  ) {
+    return "Nữ";
+  }
+
+  // Khác
+  if (
+    raw === "OTHER" ||
+    lower === "other" ||
+    lower === "khac" ||
+    lower === "khác" ||
+    lower === "o"
+  ) {
+    return "Khác";
+  }
+
+  return "Chưa cập nhật";
 };
 
 const ProfileInfo = () => {
@@ -39,6 +80,22 @@ const ProfileInfo = () => {
 
   const [profile, setProfile] = useState<AppUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // ✅ state preview ảnh phóng to
+  const [imagePreview, setImagePreview] = useState<{
+    open: boolean;
+    src: string;
+    title: string;
+  }>({
+    open: false,
+    src: "",
+    title: "",
+  });
+
+  const openPreview = (src: string, title: string) => {
+    if (!src) return;
+    setImagePreview({ open: true, src, title });
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
@@ -231,13 +288,22 @@ const ProfileInfo = () => {
                   <p className="font-medium text-muted-foreground">
                     CCCD mặt trước
                   </p>
-                  <div className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+
+                  {/* ✅ Click để phóng to */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openPreview(profile.frontIdUrl!, "CCCD mặt trước")
+                    }
+                    className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center w-full cursor-zoom-in"
+                    title="Bấm để phóng to"
+                  >
                     <img
                       src={profile.frontIdUrl}
                       alt="CCCD mặt trước"
-                      className="max-h-40 w-full object-cover"
+                      className="max-h-40 w-full object-cover hover:opacity-90 transition-opacity"
                     />
-                  </div>
+                  </button>
                 </div>
               )}
 
@@ -246,13 +312,22 @@ const ProfileInfo = () => {
                   <p className="font-medium text-muted-foreground">
                     CCCD mặt sau
                   </p>
-                  <div className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+
+                  {/* ✅ Click để phóng to */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openPreview(profile.backIdUrl!, "CCCD mặt sau")
+                    }
+                    className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center w-full cursor-zoom-in"
+                    title="Bấm để phóng to"
+                  >
                     <img
                       src={profile.backIdUrl}
                       alt="CCCD mặt sau"
-                      className="max-h-40 w-full object-cover"
+                      className="max-h-40 w-full object-cover hover:opacity-90 transition-opacity"
                     />
-                  </div>
+                  </button>
                 </div>
               )}
 
@@ -261,13 +336,22 @@ const ProfileInfo = () => {
                   <p className="font-medium text-muted-foreground">
                     Ảnh khuôn mặt
                   </p>
-                  <div className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+
+                  {/* ✅ Click để phóng to */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openPreview(profile.selfieUrl!, "Ảnh khuôn mặt")
+                    }
+                    className="border rounded-lg overflow-hidden bg-muted flex items-center justify-center w-full cursor-zoom-in"
+                    title="Bấm để phóng to"
+                  >
                     <img
                       src={profile.selfieUrl}
                       alt="Ảnh khuôn mặt"
-                      className="max-h-40 w-full object-cover"
+                      className="max-h-40 w-full object-cover hover:opacity-90 transition-opacity"
                     />
-                  </div>
+                  </button>
                 </div>
               )}
             </div>
@@ -281,7 +365,9 @@ const ProfileInfo = () => {
           <div className="flex items-start gap-3 text-sm">
             <MapPin className="w-4 h-4 text-primary mt-0.5" />
             <div className="space-y-1 flex-1">
-              <p className="text-muted-foreground text-xs">Địa chỉ thường trú</p>
+              <p className="text-muted-foreground text-xs">
+                Địa chỉ thường trú
+              </p>
               <p className="text-foreground">{permanentAddress}</p>
             </div>
           </div>
@@ -311,6 +397,44 @@ const ProfileInfo = () => {
           </Button>
         </div>
       </div>
+
+      {/* ✅ Dialog phóng to ảnh */}
+      <Dialog
+        open={imagePreview.open}
+        onOpenChange={(open) =>
+          setImagePreview((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl p-0 bg-black border border-white/10">
+          <div className="p-4 border-b border-white/10">
+            <DialogHeader>
+              <DialogTitle className="text-white text-sm sm:text-base">
+                {imagePreview.title}
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+
+          <div className="p-3 sm:p-4 flex items-center justify-center">
+            <img
+              src={imagePreview.src}
+              alt={imagePreview.title}
+              className="max-h-[75vh] max-w-[92vw] object-contain rounded-lg"
+            />
+          </div>
+
+          <div className="p-3 sm:p-4 pt-0 flex justify-end">
+            <Button
+              variant="outline"
+              className="text-white border-white/30 hover:bg-white/10"
+              onClick={() =>
+                setImagePreview((prev) => ({ ...prev, open: false }))
+              }
+            >
+              Đóng
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

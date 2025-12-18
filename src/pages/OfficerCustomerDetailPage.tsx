@@ -561,6 +561,8 @@ const OfficerCustomerDetailPage = () => {
       if (customer.status === "active") {
         userUpdates.pinFailCount = 0;
         userUpdates.pinLockedUntil = null;
+        userUpdates.biometricFailCount = 0;
+        userUpdates.biometricLockedUntil = null;
       }
 
       await update(userRef, userUpdates);

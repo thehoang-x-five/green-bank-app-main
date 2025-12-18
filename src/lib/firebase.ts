@@ -12,6 +12,7 @@ import {
   getFunctions,
   type Functions,
 } from "firebase/functions";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBaBxbCTIyyQ66zaYxlyrlDWMUSR0XVyuk",
@@ -19,7 +20,9 @@ const firebaseConfig = {
   databaseURL:
     "https://vietbank-final-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "vietbank-final",
+  // *** PHẢI LÀ appspot.com, KHÔNG PHẢI firebasestorage.app ***
   storageBucket: "vietbank-final.appspot.com",
+  // ******************************************************
   messagingSenderId: "670011798086",
   appId: "1:670011798086:web:b44d04ca1b0a597399d047",
   measurementId: "G-HHXRVGY11V",
@@ -87,7 +90,12 @@ if (useEmulator) {
 export const firebaseAuth = fbAuth;
 export const firebaseDb = fbDb;
 export const firebaseRtdb = fbRtdb;
+const app = initializeApp(firebaseConfig);
 
 export const functionsBaseUrl =
   import.meta.env?.VITE_FUNCTIONS_BASE_URL ||
   `https://${functionsRegion}-${firebaseConfig.projectId}.cloudfunctions.net`;
+// Auth / DB export dùng chung
+export const firebaseAuth: Auth = getAuth(app);
+export const firebaseDb = getFirestore(app);
+export const firebaseRtdb = getDatabase(app);

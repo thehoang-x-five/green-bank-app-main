@@ -3,29 +3,30 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  ArrowLeft,
-  IdCard,
-  Calendar,
-  MapPin,
-  Upload,
-  Info,
-} from "lucide-react";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, IdCard, Calendar, MapPin, User as UserIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import {
-  useState,
-  useEffect,
-  ChangeEvent,
-  FormEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, ChangeEvent, FormEvent } from "react";
 import { toast } from "sonner";
 
 import { onAuthStateChanged } from "firebase/auth";
 import { ref, get, update } from "firebase/database";
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
-import { uploadEkycImage, saveEkycInfo } from "@/services/ekycService";
+import { uploadEkycImage } from "@/services/ekycService";
 import type { AppUserProfile, EkycStatus } from "@/services/authService";
+
+type CaptureKind = "frontId" | "backId" | "selfie";
+
+type PreviewModal = {
+  open: boolean;
+  title: string;
+  src: string;
+};
 
 const ProfileDocumentsUpdate = () => {
   const navigate = useNavigate();
@@ -39,16 +40,39 @@ const ProfileDocumentsUpdate = () => {
     idNumber: "",
     issueDate: "",
     issuePlace: "",
-    note: "",
   });
 
-  // File & tên file ảnh
+  // File ảnh
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
-  const [frontFileName, setFrontFileName] = useState<string | null>(null);
-  const [backFileName, setBackFileName] = useState<string | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+
+  // Preview local (blob url) hoặc url đã có
+  const [frontPreview, setFrontPreview] = useState<string>("");
+  const [backPreview, setBackPreview] = useState<string>("");
+  const [selfiePreview, setSelfiePreview] = useState<string>("");
 
   const [submitting, setSubmitting] = useState(false);
+
+  // input hidden (giống màn đăng ký)
+  const frontInputRef = useRef<HTMLInputElement | null>(null);
+  const backInputRef = useRef<HTMLInputElement | null>(null);
+  const selfieInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Modal xem ảnh to
+  const [previewModal, setPreviewModal] = useState<PreviewModal>({
+    open: false,
+    title: "",
+    src: "",
+  });
+
+  const openPreview = (title: string, src: string) => {
+    setPreviewModal({ open: true, title, src });
+  };
+
+  const closePreview = () => {
+    setPreviewModal((p) => ({ ...p, open: false }));
+  };
 
   // ===== Lấy thông tin user + fill form khi mở trang =====
   useEffect(() => {
@@ -66,11 +90,20 @@ const ProfileDocumentsUpdate = () => {
           setProfile(raw);
 
           setFormData({
-            idNumber: raw.nationalId ?? "",
-            issueDate: raw.idIssueDate ?? "",
-            issuePlace: raw.placeOfIssue ?? "",
-            note: "",
+            idNumber: (raw.nationalId ?? "").toString(),
+            issueDate: (raw.idIssueDate ?? "").toString(),
+            issuePlace: (raw.placeOfIssue ?? "").toString(),
           });
+
+          // nếu trước đó user đã có url ảnh trong profile
+          const rawAny = raw as AppUserProfile & {
+            frontIdUrl?: string | null;
+            backIdUrl?: string | null;
+            selfieUrl?: string | null;
+          };
+          setFrontPreview(rawAny.frontIdUrl ?? "");
+          setBackPreview(rawAny.backIdUrl ?? "");
+          setSelfiePreview(rawAny.selfieUrl ?? "");
         } else {
           toast.error("Không tìm thấy hồ sơ khách hàng.");
         }
@@ -85,27 +118,92 @@ const ProfileDocumentsUpdate = () => {
     return () => unsubscribe();
   }, [navigate]);
 
+  // cleanup blob urls khi unmount
+  useEffect(() => {
+    return () => {
+      if (frontPreview.startsWith("blob:")) URL.revokeObjectURL(frontPreview);
+      if (backPreview.startsWith("blob:")) URL.revokeObjectURL(backPreview);
+      if (selfiePreview.startsWith("blob:")) URL.revokeObjectURL(selfiePreview);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleChange =
     (field: keyof typeof formData) =>
-    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       setFormData((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
-  const handleFrontFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFrontFile(file);
-      setFrontFileName(file.name);
-    }
+  const handleCapture = (kind: CaptureKind) => {
+    if (kind === "frontId") frontInputRef.current?.click();
+    if (kind === "backId") backInputRef.current?.click();
+    if (kind === "selfie") selfieInputRef.current?.click();
   };
 
-  const handleBackFile = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFrontFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setBackFile(file);
-      setBackFileName(file.name);
-    }
+    if (!file) return;
+
+    e.target.value = "";
+
+    setFrontFile(file);
+
+    setFrontPreview((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return prev;
+    });
+
+    setFrontPreview(URL.createObjectURL(file));
   };
+
+  const handleBackFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = "";
+
+    setBackFile(file);
+
+    setBackPreview((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return prev;
+    });
+
+    setBackPreview(URL.createObjectURL(file));
+  };
+
+  const handleSelfieFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = "";
+
+    setSelfieFile(file);
+
+    setSelfiePreview((prev) => {
+      if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return prev;
+    });
+
+    setSelfiePreview(URL.createObjectURL(file));
+  };
+
+  const canSubmit = useMemo(() => {
+    // yêu cầu: đủ CCCD info + ít nhất 1 ảnh (front/back/selfie)
+    return (
+      !!formData.idNumber.trim() &&
+      !!formData.issueDate.trim() &&
+      !!formData.issuePlace.trim() &&
+      (!!frontFile || !!backFile || !!selfieFile)
+    );
+  }, [
+    formData.idNumber,
+    formData.issueDate,
+    formData.issuePlace,
+    frontFile,
+    backFile,
+    selfieFile,
+  ]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -120,8 +218,8 @@ const ProfileDocumentsUpdate = () => {
       return;
     }
 
-    if (!frontFile && !backFile) {
-      toast.error("Vui lòng tải lên ít nhất 1 ảnh mặt trước hoặc mặt sau CCCD");
+    if (!frontFile && !backFile && !selfieFile) {
+      toast.error("Vui lòng chụp ít nhất 1 ảnh (mặt trước / mặt sau / khuôn mặt).");
       return;
     }
 
@@ -138,6 +236,7 @@ const ProfileDocumentsUpdate = () => {
       // ===== Upload ảnh mới (nếu có) =====
       let frontUrl: string | undefined;
       let backUrl: string | undefined;
+      let selfieUrl: string | undefined;
 
       if (frontFile) {
         frontUrl = await uploadEkycImage(email, "frontId", frontFile);
@@ -145,32 +244,36 @@ const ProfileDocumentsUpdate = () => {
       if (backFile) {
         backUrl = await uploadEkycImage(email, "backId", backFile);
       }
+      if (selfieFile) {
+        // key selfie giống lúc đăng ký
+        selfieUrl = await uploadEkycImage(email, "selfie", selfieFile);
+      }
 
-      // ===== Cập nhật lại user profile: CCCD + trạng thái eKYC =====
+      // ===== Cập nhật lại user profile: CCCD + trạng thái eKYC + URL ẢNH =====
       const userRef = ref(firebaseRtdb, `users/${profile.uid}`);
-
       const newStatus: EkycStatus = "PENDING";
 
-      await update(userRef, {
+      const payload: Record<string, unknown> = {
         nationalId: formData.idNumber.trim(),
+        cccd: formData.idNumber.trim(),
+        idNumber: formData.idNumber.trim(),
         idIssueDate: formData.issueDate.trim(),
         placeOfIssue: formData.issuePlace.trim(),
+        idIssuePlace: formData.issuePlace.trim(),
+
         ekycStatus: newStatus,
+        kycStatus: newStatus,
+        ekyc_status: newStatus,
+
         canTransact: false, // cập nhật giấy tờ => tạm khóa giao dịch, chờ duyệt lại
-      });
+      };
 
-      // ===== Ghi thêm log / metadata eKYC (tùy ý) =====
-           // ===== Ghi thêm log / metadata eKYC cơ bản (giống lúc đăng ký) =====
-      await saveEkycInfo(email, {
-        fullName: profile.username,
-        dob: profile.dob ?? "",
-        gender: profile.gender ?? "",
-        address: profile.permanentAddress ?? "",
-        nationalId: formData.idNumber.trim(),
-        idIssueDate: formData.issueDate.trim(),
-        // không truyền idIssuePlace, note, front/backUrl... vì kiểu hàm chưa khai báo
-      });
+      // ✅ Cực quan trọng: update URL ảnh lên users để bên nhân viên đọc đúng ảnh mới
+      if (frontUrl) payload.frontIdUrl = frontUrl;
+      if (backUrl) payload.backIdUrl = backUrl;
+      if (selfieUrl) payload.selfieUrl = selfieUrl;
 
+      await update(userRef, payload);
 
       toast.success(
         "Đã gửi yêu cầu cập nhật giấy tờ định danh. Tài khoản sẽ được xét duyệt lại eKYC."
@@ -204,6 +307,7 @@ const ProfileDocumentsUpdate = () => {
           <button
             onClick={() => navigate("/profile/info")}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            type="button"
           >
             <ArrowLeft size={24} />
           </button>
@@ -261,74 +365,176 @@ const ProfileDocumentsUpdate = () => {
           </div>
         </Card>
 
-        {/* Ảnh giấy tờ */}
+        {/* Ảnh giấy tờ (khung ảnh + chụp camera) */}
         <Card className="p-5 space-y-4">
           <h3 className="text-sm font-semibold mb-1">Ảnh giấy tờ</h3>
+          <p className="text-xs text-muted-foreground">
+            Bấm vào khung để chụp ảnh. Sau khi chụp, bấm vào ảnh để xem phóng to.
+            Có thể chụp lại nếu ảnh bị sai/mờ.
+          </p>
 
-          <div className="text-xs text-muted-foreground flex items-start gap-2">
-            <Info className="w-4 h-4 mt-0.5" />
-            <p>
-              Vui lòng chụp rõ nét, không bị chói, đủ 4 góc giấy tờ. Ảnh mới sẽ
-              thay thế ảnh cũ và được dùng để xét duyệt lại eKYC.
-            </p>
-          </div>
-
+          {/* CCCD trước/sau */}
           <div className="grid md:grid-cols-2 gap-4">
             {/* Mặt trước */}
             <div className="space-y-2">
               <Label>Ảnh mặt trước</Label>
-              <label className="border border-dashed border-primary/40 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-primary/5 transition-colors">
-                <div className="flex flex-col text-xs">
-                  <span className="font-medium text-sm">
-                    {frontFileName || "Chọn ảnh mặt trước CCCD / CMND"}
-                  </span>
-                  <span className="text-muted-foreground mt-1">
-                    Định dạng: JPG, PNG • Tối đa 5MB
-                  </span>
-                </div>
-                <Upload className="w-5 h-5 text-primary" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFrontFile}
-                />
-              </label>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="h-40 w-full flex items-center justify-center p-0 overflow-hidden"
+                onClick={() => {
+                  if (frontPreview) {
+                    openPreview("CCCD mặt trước", frontPreview);
+                    return;
+                  }
+                  handleCapture("frontId");
+                }}
+                disabled={submitting}
+              >
+                {frontPreview ? (
+                  <img
+                    src={frontPreview}
+                    alt="CCCD mặt trước"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <IdCard className="h-5 w-5" />
+                    <span className="text-xs font-medium">Chụp CCCD mặt trước</span>
+                  </div>
+                )}
+              </Button>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() => handleCapture("frontId")}
+                  disabled={submitting}
+                >
+                  {frontPreview ? "Chụp lại" : "Mở camera"}
+                </Button>
+              </div>
             </div>
 
             {/* Mặt sau */}
             <div className="space-y-2">
               <Label>Ảnh mặt sau</Label>
-              <label className="border border-dashed border-primary/40 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-primary/5 transition-colors">
-                <div className="flex flex-col text-xs">
-                  <span className="font-medium text-sm">
-                    {backFileName || "Chọn ảnh mặt sau CCCD / CMND"}
-                  </span>
-                  <span className="text-muted-foreground mt-1">
-                    Định dạng: JPG, PNG • Tối đa 5MB
-                  </span>
-                </div>
-                <Upload className="w-5 h-5 text-primary" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleBackFile}
-                />
-              </label>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="h-40 w-full flex items-center justify-center p-0 overflow-hidden"
+                onClick={() => {
+                  if (backPreview) {
+                    openPreview("CCCD mặt sau", backPreview);
+                    return;
+                  }
+                  handleCapture("backId");
+                }}
+                disabled={submitting}
+              >
+                {backPreview ? (
+                  <img
+                    src={backPreview}
+                    alt="CCCD mặt sau"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <IdCard className="h-5 w-5" />
+                    <span className="text-xs font-medium">Chụp CCCD mặt sau</span>
+                  </div>
+                )}
+              </Button>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() => handleCapture("backId")}
+                  disabled={submitting}
+                >
+                  {backPreview ? "Chụp lại" : "Mở camera"}
+                </Button>
+              </div>
             </div>
           </div>
-        </Card>
 
-        {/* Ghi chú bổ sung */}
-        <Card className="p-5 space-y-2 mb-4">
-          <Label htmlFor="note">Ghi chú (nếu có)</Label>
-          <Textarea
-            id="note"
-            value={formData.note}
-            onChange={handleChange("note")}
-            placeholder="Ví dụ: Đổi từ CMND sang CCCD, cập nhật lại địa chỉ trên giấy tờ..."
-            className="min-h-[80px]"
+          {/* Khuôn mặt (khung đứng như đăng ký) */}
+          <div className="space-y-2">
+            <Label>Ảnh khuôn mặt</Label>
+
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                className="p-0 border border-dashed border-muted-foreground/60 rounded-xl bg-muted/40 hover:bg-muted/70
+                  w-32 h-44 flex items-center justify-center overflow-hidden"
+                onClick={() => {
+                  if (selfiePreview) {
+                    openPreview("Ảnh khuôn mặt", selfiePreview);
+                    return;
+                  }
+                  handleCapture("selfie");
+                }}
+                disabled={submitting}
+              >
+                {selfiePreview ? (
+                  <img
+                    src={selfiePreview}
+                    alt="Ảnh khuôn mặt"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <UserIcon className="h-5 w-5" />
+                    <span className="text-xs font-medium">Chụp khuôn mặt</span>
+                  </div>
+                )}
+              </Button>
+            </div>
+
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-xs"
+                onClick={() => handleCapture("selfie")}
+                disabled={submitting}
+              >
+                {selfiePreview ? "Chụp lại" : "Mở camera"}
+              </Button>
+            </div>
+          </div>
+
+          {/* input file ẩn */}
+          <input
+            ref={frontInputRef}
+            capture="environment"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFrontFileChange}
+          />
+          <input
+            ref={backInputRef}
+            capture="environment"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleBackFileChange}
+          />
+          <input
+            ref={selfieInputRef}
+            capture="user"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleSelfieFileChange}
           />
         </Card>
 
@@ -343,11 +549,41 @@ const ProfileDocumentsUpdate = () => {
           >
             Hủy
           </Button>
-          <Button type="submit" className="w-full" disabled={submitting}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={submitting || !canSubmit}
+          >
             {submitting ? "Đang gửi yêu cầu..." : "Gửi yêu cầu cập nhật"}
           </Button>
         </div>
       </form>
+
+      {/* Dialog xem ảnh phóng to */}
+      <Dialog
+        open={previewModal.open}
+        onOpenChange={(open) => !open && closePreview()}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{previewModal.title}</DialogTitle>
+          </DialogHeader>
+
+          <div className="w-full rounded-lg overflow-hidden border bg-slate-50">
+            <img
+              src={previewModal.src}
+              alt={previewModal.title}
+              className="w-full h-auto object-contain"
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button type="button" onClick={closePreview}>
+              Đóng
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

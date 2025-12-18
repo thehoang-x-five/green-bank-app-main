@@ -57,7 +57,15 @@ exports.sendOtpEmail = onRequest(
         from: `"VietBank Digital" <${smtpEmail.value()}>`,
         to: email,
         subject: "Mã OTP xác thực giao dịch VietBank",
-        text: `Mã OTP của bạn: ${otp} cho giao dịch ${txnId || ""}.`,
+        text: `Mã OTP của bạn là: ${otp} cho giao dịch ${txnId}. OTP có hiệu lực trong 5 phút.`,
+        html: `
+          <p>Xin chào,</p>
+          <p>Mã OTP xác thực giao dịch của bạn là:</p>
+          <h2>${otp}</h2>
+          <p>Giao dịch: <strong>${txnId}</strong></p>
+          <p>OTP có hiệu lực trong <strong>5 phút</strong>. Tuyệt đối không chia sẻ mã này cho bất kỳ ai.</p>
+          <p>Trân trọng,<br/>VietBank Digital</p>
+        `,
       });
 
       res.status(200).send("OK");

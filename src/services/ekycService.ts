@@ -144,6 +144,31 @@ export async function saveEkycInfo(email: string, info: EkycInfo) {
   }
 }
 
+export async function saveEkycInfoByUid(
+  uid: string,
+  email: string,
+  info: EkycInfo
+) {
+  const key = emailToKey(email);
+  const now = Date.now();
+
+  // 1) update session
+  await update(dbRef(firebaseRtdb, `ekycSessions/${key}`), {
+    email,
+    ...info,
+    submittedAt: now,
+    updatedAt: now,
+    status: "PENDING_REVIEW",
+    uid,
+  });
+
+  // 2) update user trực tiếp theo uid (KO scan users)
+  await update(dbRef(firebaseRtdb, `users/${uid}`), {
+    ekycStatus: "PENDING",
+    ekycSubmittedAt: now,
+  });
+}
+
 // =====================================================
 //  B. SIDE NHÂN VIÊN – danh sách & duyệt eKYC
 // =====================================================

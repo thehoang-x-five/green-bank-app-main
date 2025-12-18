@@ -1,9 +1,12 @@
 // src/pages/TransferToAccount.tsx
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { getUserProfile, verifyTransactionPin } from "@/services/userService";
+
 import {
   Select,
   SelectContent,
@@ -17,30 +20,19 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
-import {
-  onValue,
-  query,
-  ref,
-  orderByChild,
-  equalTo,
-  get,
-} from "firebase/database";
+import { onValue, query, ref, orderByChild, equalTo, get } from "firebase/database";
+
 import {
   initiateTransferToAccount,
   type TransferToAccountRequest,
 } from "@/services/transferService";
-import { verifyTransactionPin } from "@/services/userService";
 
-// 🔐 NEW: import service sinh trắc
-import {
-  HIGH_VALUE_THRESHOLD_VND,
-  runBiometricVerification,
-} from "@/services/biometricService";
+import { HIGH_VALUE_THRESHOLD_VND } from "@/services/biometricService";
 
 type BeneficiaryFromState = {
   id?: string;
-  name?: string; // tên thật người thụ hưởng
-  nickname?: string; // tên gợi nhớ
+  name?: string;
+  nickname?: string;
   accountNumber?: string;
   bankName?: string;
   bankCode?: string;
@@ -56,6 +48,17 @@ type RtdbUser = {
   username?: string;
   fullName?: string;
   displayName?: string;
+
+  // ✅ thêm các field để kiểm tra eligibility người thụ hưởng
+  status?: string | null; // "ACTIVE" | "LOCKED"...
+  canTransact?: boolean | null;
+
+  // node user anh có thể dùng kycStatus hoặc ekycStatus + các biến thể
+  kycStatus?: string | null;
+  ekycStatus?: string | null;
+  kyc_status?: string | null;
+  ekyc_status?: string | null;
+
   [key: string]: unknown;
 };
 
@@ -80,15 +83,74 @@ type ExternalAccount = {
 
 type Step = "FORM" | "PIN";
 
+/**
+ * ✅ Support nhiều kiểu state để khỏi lệch:
+ * - từ danh bạ: { beneficiary }
+ * - từ biometric quay lại: { pendingRequest } hoặc { resume: { pendingRequest } }
+ */
+type RouteState = {
+  beneficiary?: BeneficiaryFromState;
+  pendingRequest?: TransferToAccountRequest;
+  sessionId?: string;
+  resume?: {
+    pendingRequest?: TransferToAccountRequest;
+  };
+};
+
+function generateSessionId(): string {
+  const g = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
+  const uuid = g.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+// ===== ✅ Format / Parse tiền VND (không any) =====
+function formatVndWithDots(input: string): string {
+  const digits = input.replace(/\D/g, "");
+  if (!digits) return "";
+
+  // bỏ số 0 ở đầu (trừ trường hợp "0")
+  const normalized = digits.replace(/^0+(?=\d)/, "");
+
+  // chèn dấu chấm theo nhóm 3
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+function parseVndToNumber(input: string): number {
+  const digits = input.replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+}
+
+// ===== ✅ Helpers check KYC/eKYC =====
+function upper(v: unknown): string {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+function isKycVerified(u: RtdbUser): boolean {
+  const s1 = upper(u.ekycStatus);
+  const s2 = upper(u.kycStatus);
+  const s3 = upper(u.ekyc_status);
+  const s4 = upper(u.kyc_status);
+  return s1 === "VERIFIED" || s2 === "VERIFIED" || s3 === "VERIFIED" || s4 === "VERIFIED";
+}
+
+function resolveDisplayName(u: RtdbUser): string {
+  return (
+    String(u.fullName ?? "").trim() ||
+    String(u.username ?? "").trim() ||
+    String(u.displayName ?? "").trim() ||
+    ""
+  );
+}
+
 const TransferToAccount = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const beneficiary: BeneficiaryFromState | undefined =
-    (location.state as { beneficiary?: BeneficiaryFromState } | undefined)
-      ?.beneficiary;
+  const routeState = (location.state as RouteState | undefined) ?? undefined;
+  const beneficiary: BeneficiaryFromState | undefined = routeState?.beneficiary;
 
-  // Danh sách tài khoản nguồn (thanh toán) của user hiện tại
+  // Danh sách tài khoản nguồn của user hiện tại
   const [sourceAccounts, setSourceAccounts] = useState<SourceAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
 
@@ -99,27 +161,23 @@ const TransferToAccount = () => {
     sourceAccount: "",
     bank: beneficiary?.bankName ?? "",
     accountNumber: beneficiary?.accountNumber ?? "",
-    beneficiaryName: beneficiary?.name ?? "", // tên thật
-    nickname: beneficiary?.nickname ?? "", // tên gợi nhớ
+    beneficiaryName: beneficiary?.name ?? "",
+    nickname: beneficiary?.nickname ?? "",
     amount: "",
     content: "",
     saveAccount: false,
   });
 
-  // Xác định chuyển nội bộ hay liên ngân hàng
-  const isInternalBank = formData.bank === "VietBank";
-
-  // request tạm thời để chuyển sang bước PIN
+  // request tạm để chuyển sang bước PIN
   const [pendingRequest, setPendingRequest] =
     useState<TransferToAccountRequest | null>(null);
   const [pin, setPin] = useState("");
 
-  // Tên người CHUYỂN (chủ tài khoản đang đăng nhập)
+  // Tên người CHUYỂN
   const [senderName, setSenderName] = useState<string>("");
 
-  // Danh sách ngân hàng
   const banks = [
-    "VietBank", // ngân hàng của mình
+    "VietBank",
     "Vietcombank",
     "BIDV",
     "Techcombank",
@@ -130,7 +188,20 @@ const TransferToAccount = () => {
     "VPBank",
   ];
 
-  // ========== Lấy tài khoản nguồn từ RTDB: /accounts where uid == currentUser.uid ==========
+  // ✅ Nếu quay lại từ màn biometric -> restore pendingRequest + mở lại step PIN
+  useEffect(() => {
+    const resumeReq =
+      routeState?.pendingRequest ?? routeState?.resume?.pendingRequest;
+
+    if (resumeReq) {
+      setPendingRequest(resumeReq);
+      setPin("");
+      setStep("PIN");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ========== Load accounts ==========
   useEffect(() => {
     const currentUser = firebaseAuth.currentUser;
 
@@ -179,7 +250,6 @@ const TransferToAccount = () => {
         setSourceAccounts(active);
         setLoadingAccounts(false);
 
-        // Auto chọn tài khoản đầu tiên nếu chưa chọn
         if (active.length > 0 && !formData.sourceAccount) {
           setFormData((prev) => ({
             ...prev,
@@ -198,7 +268,7 @@ const TransferToAccount = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ========== Lấy tên người CHUYỂN từ users/{uid} ==========
+  // ========== Lấy tên người CHUYỂN ==========
   useEffect(() => {
     const currentUser = firebaseAuth.currentUser;
     if (!currentUser) return;
@@ -209,16 +279,13 @@ const TransferToAccount = () => {
         if (!snap.exists()) return;
         const data = snap.val() as RtdbUser;
         const name =
-          (data.fullName ||
-            data.username ||
-            data.displayName ||
-            "")?.toString() || "";
-
+          (data.fullName || data.username || data.displayName || "")
+            ?.toString()
+            .trim() || "";
         if (!name) return;
 
         setSenderName(name);
 
-        // Nếu ô content đang trống thì fill mặc định = TÊN NGƯỜI CHUYỂN + " chuyển tiền"
         setFormData((prev) =>
           prev.content.trim()
             ? prev
@@ -230,19 +297,15 @@ const TransferToAccount = () => {
       });
   }, []);
 
-  // ========== Lookup & auto-fill tên người nhận (nội bộ + liên ngân hàng) ==========
+  // ========== Lookup tên người nhận + CHECK eligibility ==========
   const lookupAndFillBeneficiaryName = async (): Promise<string> => {
     const bankName = formData.bank.trim();
     const accountNumber = formData.accountNumber.trim();
-
     if (!bankName || !accountNumber) return "";
 
     try {
-      // 1. Nội bộ VietBank -> tra trong "accounts"
       if (bankName === "VietBank") {
-        let accSnap = await get(
-          ref(firebaseRtdb, `accounts/${accountNumber}`)
-        );
+        let accSnap = await get(ref(firebaseRtdb, `accounts/${accountNumber}`));
 
         if (!accSnap.exists()) {
           const accQuery = query(
@@ -253,17 +316,12 @@ const TransferToAccount = () => {
           const listSnap = await get(accQuery);
 
           if (!listSnap.exists()) {
-            toast.error(
-              "Không tìm thấy tài khoản nhận trong hệ thống VietBank."
-            );
+            toast.error("Không tìm thấy tài khoản nhận trong hệ thống VietBank.");
             setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
             return "";
           }
 
-          const all = listSnap.val() as Record<
-            string,
-            { uid?: string; [key: string]: unknown }
-          >;
+          const all = listSnap.val() as Record<string, { uid?: string; [key: string]: unknown }>;
           const firstKey = Object.keys(all)[0];
           accSnap = await get(ref(firebaseRtdb, `accounts/${firstKey}`));
         }
@@ -276,87 +334,100 @@ const TransferToAccount = () => {
 
         const accData = accSnap.val() as RtdbAccount;
 
-        if (accData.status && accData.status !== "ACTIVE") {
-          toast.error("Tài khoản nhận hiện không hoạt động.");
+        // ✅ Rule 1: account nhận phải ACTIVE
+        if (accData.status && upper(accData.status) !== "ACTIVE") {
+          toast.error("Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động.");
           setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
           return "";
         }
 
         const uid = accData.uid;
         if (typeof uid !== "string" || uid.trim() === "") {
-          toast.error("Tài khoản nhận không hợp lệ.");
+          toast.error("Tài khoản thụ hưởng không hợp lệ.");
           setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
           return "";
         }
 
         const userSnap = await get(ref(firebaseRtdb, `users/${uid}`));
         if (!userSnap.exists()) {
-          toast.error("Không tìm thấy thông tin chủ tài khoản nhận.");
+          toast.error("Không tìm thấy thông tin chủ tài khoản thụ hưởng.");
           setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
           return "";
         }
 
         const userData = userSnap.val() as RtdbUser;
-        const name =
-          (userData.fullName ||
-            userData.username ||
-            userData.displayName ||
-            "")?.toString() || "";
 
-        if (!name) {
-          toast.error("Không lấy được tên chủ tài khoản nhận.");
+        // ✅ Rule 2: user nhận không LOCKED
+        if (upper(userData.status) === "LOCKED") {
+          toast.error("Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động.");
           setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
           return "";
         }
 
-        setFormData((prev) => ({
-          ...prev,
-          beneficiaryName: name,
-        }));
+        // ✅ Rule 3: user nhận phải KYC/eKYC VERIFIED
+        if (!isKycVerified(userData)) {
+          toast.error("Tài khoản thụ hưởng chưa hoàn tất eKYC, không thể nhận tiền.");
+          setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
+          return "";
+        }
+
+        // ✅ Rule 4 (tuỳ): nếu canTransact = false thì chặn
+        if (userData.canTransact === false) {
+          toast.error("Tài khoản thụ hưởng chưa được bật quyền giao dịch, không thể nhận tiền.");
+          setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
+          return "";
+        }
+
+        const name = resolveDisplayName(userData);
+        if (!name) {
+          toast.error("Không lấy được tên chủ tài khoản thụ hưởng.");
+          setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
+          return "";
+        }
+
+        setFormData((prev) => ({ ...prev, beneficiaryName: name }));
         return name;
       }
 
-      // 2. Liên ngân hàng -> tra trong "externalAccounts/{bankName}/{accountNumber}"
-      const extRef = ref(
-        firebaseRtdb,
-        `externalAccounts/${bankName}/${accountNumber}`
-      );
+      // ========== External bank ==========
+      const extRef = ref(firebaseRtdb, `externalAccounts/${bankName}/${accountNumber}`);
       const extSnap = await get(extRef);
 
       if (!extSnap.exists()) {
-        toast.error(
-          `Không tìm thấy tài khoản ${accountNumber} tại ngân hàng ${bankName}.`
-        );
+        toast.error(`Không tìm thấy tài khoản ${accountNumber} tại ngân hàng ${bankName}.`);
         setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
         return "";
       }
 
       const extData = extSnap.val() as ExternalAccount;
+      const extStatus = upper(extData.status);
+
+      if (extStatus && extStatus !== "ACTIVE") {
+        toast.error("Tài khoản nhận tại ngân hàng này hiện không hoạt động.");
+        setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
+        return "";
+      }
+
       const extName =
         (extData.name ||
           extData.fullName ||
           extData.ownerName ||
           extData.username ||
-          "")?.toString() || "";
+          "")
+          ?.toString()
+          .trim() || "";
 
       if (!extName) {
-        toast.error(
-          `Không lấy được tên chủ tài khoản ${accountNumber} tại ngân hàng ${bankName}.`
-        );
+        toast.error(`Không lấy được tên chủ tài khoản ${accountNumber} tại ngân hàng ${bankName}.`);
         setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
         return "";
       }
 
-      setFormData((prev) => ({
-        ...prev,
-        beneficiaryName: extName,
-      }));
+      setFormData((prev) => ({ ...prev, beneficiaryName: extName }));
       return extName;
-    } catch (error) {
+    } catch (error: unknown) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Lỗi khi tra cứu thông tin tài khoản nhận.";
+        error instanceof Error ? error.message : "Lỗi khi tra cứu thông tin tài khoản nhận.";
       console.error("lookupAndFillBeneficiaryName error:", error);
       toast.error(message);
       setFormData((prev) => ({ ...prev, beneficiaryName: "" }));
@@ -364,8 +435,8 @@ const TransferToAccount = () => {
     }
   };
 
-  // ========== Submit FORM -> chuyển sang bước PIN ==========
-  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+  // ========== Submit FORM -> PIN ==========
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
 
     if (!formData.sourceAccount) {
@@ -378,7 +449,6 @@ const TransferToAccount = () => {
       return;
     }
 
-    // Không cho chuyển tới chính tài khoản nguồn (nội bộ)
     if (
       formData.bank === "VietBank" &&
       formData.accountNumber.trim() === formData.sourceAccount.trim()
@@ -387,33 +457,26 @@ const TransferToAccount = () => {
       return;
     }
 
-    const amountNumber = Number(formData.amount);
+    // ✅ parse lại từ chuỗi có dấu chấm
+    const amountNumber = parseVndToNumber(formData.amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       toast.error("Số tiền không hợp lệ");
       return;
     }
 
-    // Đảm bảo đã có tên người thụ hưởng (lookup nếu đang trống)
-    let beneficiaryName = formData.beneficiaryName.trim();
-    if (!beneficiaryName) {
-      beneficiaryName = await lookupAndFillBeneficiaryName();
-    }
+    // ✅ luôn lookup lại để đảm bảo chặn đúng trạng thái mới nhất
+    const beneficiaryName = await lookupAndFillBeneficiaryName();
 
     if (!beneficiaryName) {
-      toast.error(
-        "Không tìm thấy thông tin người thụ hưởng. Vui lòng kiểm tra lại số tài khoản / ngân hàng."
-      );
+      toast.error("Không thể tiếp tục vì tài khoản thụ hưởng không hợp lệ.");
       return;
     }
 
-    const bankCode =
-      formData.bank === "VietBank" ? "VIETBANK" : undefined;
+    const bankCode = formData.bank === "VietBank" ? "VIETBANK" : undefined;
 
-    // Auto fill nội dung: ưu tiên content user tự nhập; nếu trống -> tên NGƯỜI CHUYỂN + " chuyển tiền"
     const trimmedContent = formData.content.trim();
     const autoContent =
-      trimmedContent ||
-      (senderName ? `${senderName} chuyển tiền` : "Chuyển tiền");
+      trimmedContent || (senderName ? `${senderName} chuyển tiền` : "Chuyển tiền");
 
     const req: TransferToAccountRequest = {
       sourceAccountNumber: formData.sourceAccount,
@@ -427,13 +490,12 @@ const TransferToAccount = () => {
       saveRecipient: formData.saveAccount,
     };
 
-    // Lưu lại request và chuyển sang bước nhập PIN giao dịch
     setPendingRequest(req);
     setPin("");
     setStep("PIN");
   };
 
-  // ========== Xác nhận PIN (transaction PIN) + sinh trắc + Smart-OTP ==========
+  // ========== Confirm PIN -> (>=10tr) sang biometric, (<10tr) tạo txn -> OTP ==========
   const handleConfirmPin = async (): Promise<void> => {
     if (!pendingRequest) {
       toast.error("Thiếu thông tin giao dịch, vui lòng thực hiện lại.");
@@ -454,34 +516,28 @@ const TransferToAccount = () => {
     }
 
     setIsSubmitting(true);
+    let navigated = false;
+
     try {
-      // 1. Xác thực transaction PIN (user-level)
+      // 1) verify PIN (service sẽ tự tăng pinFailCount + khóa nếu quá 5 lần)
       await verifyTransactionPin(currentUser.uid, trimmedPin);
 
-      // 2. Nếu giao dịch giá trị cao (>= 10 triệu) -> yêu cầu sinh trắc
+      // 2) HIGH VALUE -> sang màn biometric (KHÔNG tạo txn/OTP ở đây)
       if (pendingRequest.amount >= HIGH_VALUE_THRESHOLD_VND) {
-        const bioResult = await runBiometricVerification(
-          `Giao dịch chuyển khoản ${pendingRequest.amount.toLocaleString(
-            "vi-VN"
-          )} VND. Vui lòng xác thực sinh trắc (vân tay / FaceID).`
-        );
-
-        if (!bioResult.success) {
-          toast.error(
-            bioResult.message ||
-              "Xác thực sinh trắc không thành công. Giao dịch chưa được khởi tạo."
-          );
-          setIsSubmitting(false);
-          return;
-        }
+        const sessionId = generateSessionId();
+        navigated = true;
+        navigate("/transfer/biometric", {
+          state: { pendingRequest, sessionId },
+        });
+        return;
       }
 
-      // 3. Tạo giao dịch + Smart-OTP
+      // 3) LOW VALUE -> tạo txn + Smart-OTP -> OTP
       const resp = await initiateTransferToAccount(pendingRequest);
 
       toast.success("Đã tạo Smart-OTP cho giao dịch chuyển tiền.");
 
-      // 4. Điều hướng sang màn OTP, mang theo thông tin giao dịch + OTP
+      navigated = true;
       navigate("/transfer/otp", {
         state: {
           transfer: {
@@ -491,27 +547,55 @@ const TransferToAccount = () => {
             amount: pendingRequest.amount,
             content: pendingRequest.content,
             sourceAccountNumber: pendingRequest.sourceAccountNumber,
-            destinationAccountNumber:
-              pendingRequest.destinationAccountNumber,
+            destinationAccountNumber: pendingRequest.destinationAccountNumber,
             destinationName:
-              pendingRequest.destinationName ??
-              pendingRequest.destinationAccountNumber,
+              pendingRequest.destinationName ?? pendingRequest.destinationAccountNumber,
             bankName: pendingRequest.bankName,
           },
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Có lỗi xảy ra khi xác thực PIN hoặc tạo giao dịch.";
+        error instanceof Error ? error.message : "Có lỗi xảy ra khi xác thực PIN hoặc tạo giao dịch.";
+
       toast.error(message);
+
+      // ✅ Nếu là lỗi sai PIN -> hiển thị số lần còn lại
+      if (
+        error instanceof Error &&
+        (error.message.includes("Mã PIN giao dịch không đúng") ||
+          (error.message.toLowerCase().includes("pin") && error.message.toLowerCase().includes("không đúng")))
+      ) {
+        try {
+          const profile = await getUserProfile(currentUser.uid);
+          if (profile) {
+            const withPin = profile as {
+              pinFailCount?: number | null;
+              status?: string | null;
+            };
+
+            const failCount = withPin.pinFailCount ?? 0;
+            const remaining = Math.max(0, 5 - failCount);
+            const isLocked = (withPin.status ?? "").toString().toUpperCase() === "LOCKED";
+
+            if (isLocked || remaining <= 0) {
+              toast.error(
+                "Bạn đã nhập sai mã PIN quá 5 lần. Tài khoản đã bị tạm khóa. Vui lòng liên hệ nhân viên để mở khóa."
+              );
+            } else {
+              toast.error(`Sai mã PIN. Bạn còn ${remaining} lần thử trước khi tài khoản bị tạm khóa.`);
+            }
+          }
+        } catch (err: unknown) {
+          console.error("Không lấy được số lần sai PIN:", err);
+        }
+      }
     } finally {
-      setIsSubmitting(false);
+      if (!navigated) setIsSubmitting(false);
     }
   };
 
-  // ========== UI STEP PIN ==========
+  // ====== UI STEP PIN ======
   if (step === "PIN" && pendingRequest) {
     return (
       <div className="min-h-screen bg-background pb-20">
@@ -520,12 +604,11 @@ const TransferToAccount = () => {
             <button
               onClick={() => setStep("FORM")}
               className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+              disabled={isSubmitting}
             >
               <ArrowLeft size={24} />
             </button>
-            <h1 className="text-xl font-bold text-primary-foreground">
-              Nhập PIN giao dịch
-            </h1>
+            <h1 className="text-xl font-bold text-primary-foreground">Nhập PIN giao dịch</h1>
           </div>
         </div>
 
@@ -541,15 +624,13 @@ const TransferToAccount = () => {
               <p>
                 Người nhận:{" "}
                 <span className="font-semibold">
-                  {pendingRequest.destinationName} -{" "}
-                  {pendingRequest.destinationAccountNumber} (
-                  {pendingRequest.bankName})
+                  {pendingRequest.destinationName} - {pendingRequest.destinationAccountNumber} ({pendingRequest.bankName})
                 </span>
               </p>
+
               {pendingRequest.amount >= HIGH_VALUE_THRESHOLD_VND && (
                 <p className="text-xs text-amber-600">
-                  Giao dịch giá trị cao, sau khi nhập PIN sẽ yêu cầu
-                  xác thực sinh trắc.
+                  Giao dịch giá trị cao, sau khi nhập PIN sẽ chuyển sang màn hình xác thực sinh trắc.
                 </p>
               )}
             </div>
@@ -563,17 +644,11 @@ const TransferToAccount = () => {
                 maxLength={6}
                 placeholder="Nhập PIN 4–6 số"
                 value={pin}
-                onChange={(e) =>
-                  setPin(e.target.value.replace(/\D/g, ""))
-                }
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
               />
             </div>
 
-            <Button
-              className="w-full mt-4"
-              onClick={handleConfirmPin}
-              disabled={isSubmitting}
-            >
+            <Button className="w-full mt-4" onClick={handleConfirmPin} disabled={isSubmitting}>
               {isSubmitting ? "Đang xử lý..." : "Tiếp tục"}
             </Button>
           </Card>
@@ -582,10 +657,9 @@ const TransferToAccount = () => {
     );
   }
 
-  // ========== UI STEP FORM ==========
+  // ====== UI STEP FORM ======
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
       <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
         <div className="flex items-center gap-4">
           <button
@@ -594,43 +668,31 @@ const TransferToAccount = () => {
           >
             <ArrowLeft size={24} />
           </button>
-          <h1 className="text-xl font-bold text-primary-foreground">
-            Chuyển tới tài khoản khác
-          </h1>
+          <h1 className="text-xl font-bold text-primary-foreground">Chuyển tới tài khoản khác</h1>
         </div>
       </div>
 
       <div className="px-6 -mt-4">
         <Card className="p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Source Account */}
             <div className="space-y-2">
               <Label>Tài khoản nguồn</Label>
 
               {loadingAccounts ? (
-                <p className="text-sm text-muted-foreground">
-                  Đang tải danh sách tài khoản...
-                </p>
+                <p className="text-sm text-muted-foreground">Đang tải danh sách tài khoản...</p>
               ) : sourceAccounts.length === 0 ? (
-                <p className="text-sm text-destructive">
-                  Bạn chưa có tài khoản thanh toán hoạt động.
-                </p>
+                <p className="text-sm text-destructive">Bạn chưa có tài khoản thanh toán hoạt động.</p>
               ) : (
                 <Select
                   value={formData.sourceAccount}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, sourceAccount: value }))
-                  }
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, sourceAccount: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Chọn tài khoản nguồn" />
                   </SelectTrigger>
                   <SelectContent>
                     {sourceAccounts.map((acc) => (
-                      <SelectItem
-                        key={acc.accountNumber}
-                        value={acc.accountNumber}
-                      >
+                      <SelectItem key={acc.accountNumber} value={acc.accountNumber}>
                         {acc.accountNumber} - Tài khoản thanh toán
                       </SelectItem>
                     ))}
@@ -640,11 +702,8 @@ const TransferToAccount = () => {
             </div>
 
             <div className="border-t pt-4">
-              <h3 className="font-semibold mb-4 text-foreground">
-                Thông tin người nhận
-              </h3>
+              <h3 className="font-semibold mb-4 text-foreground">Thông tin người nhận</h3>
 
-              {/* Bank Selection */}
               <div className="space-y-2 mb-4">
                 <Label htmlFor="bank">
                   Ngân hàng <span className="text-destructive">*</span>
@@ -655,7 +714,6 @@ const TransferToAccount = () => {
                     setFormData((prev) => ({
                       ...prev,
                       bank: value,
-                      // đổi ngân hàng thì clear STK + tên người nhận
                       accountNumber: "",
                       beneficiaryName: "",
                     }))
@@ -674,7 +732,6 @@ const TransferToAccount = () => {
                 </Select>
               </div>
 
-              {/* Account Number */}
               <div className="space-y-2 mb-4">
                 <Label htmlFor="accountNumber">
                   Số tài khoản <span className="text-destructive">*</span>
@@ -688,15 +745,13 @@ const TransferToAccount = () => {
                     setFormData((prev) => ({
                       ...prev,
                       accountNumber: e.target.value,
+                      beneficiaryName: "", // ✅ đổi STK là reset tên luôn để tránh “tên cũ”
                     }))
                   }
-                  onBlur={() => {
-                    void lookupAndFillBeneficiaryName();
-                  }}
+                  onBlur={() => void lookupAndFillBeneficiaryName()}
                 />
               </div>
 
-              {/* Beneficiary Name */}
               <div className="space-y-2 mb-4">
                 <Label htmlFor="beneficiaryName">Tên người thụ hưởng</Label>
                 <Input
@@ -709,7 +764,6 @@ const TransferToAccount = () => {
                 />
               </div>
 
-              {/* Nickname */}
               <div className="space-y-2 mb-4">
                 <Label htmlFor="nickname">Tên gợi nhớ</Label>
                 <Input
@@ -727,41 +781,38 @@ const TransferToAccount = () => {
               </div>
             </div>
 
-            {/* Amount */}
             <div className="space-y-1">
               <Label htmlFor="amount">
                 Số tiền <span className="text-destructive">*</span>
               </Label>
+
               <Input
                 id="amount"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 placeholder="Nhập số tiền"
                 value={formData.amount}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, amount: e.target.value }))
-                }
+                onChange={(e) => {
+                  const formatted = formatVndWithDots(e.target.value);
+                  setFormData((prev) => ({ ...prev, amount: formatted }));
+                }}
               />
+
               <p className="text-xs text-muted-foreground">
-                Giao dịch từ{" "}
-                {HIGH_VALUE_THRESHOLD_VND.toLocaleString("vi-VN")} VND trở lên
-                sẽ yêu cầu <b>xác thực sinh trắc</b> sau khi nhập PIN.
+                Giao dịch từ {HIGH_VALUE_THRESHOLD_VND.toLocaleString("vi-VN")} VND trở lên sẽ yêu cầu <b>xác thực sinh trắc</b>.
               </p>
             </div>
 
-            {/* Content */}
             <div className="space-y-2">
               <Label htmlFor="content">Nội dung chuyển tiền</Label>
               <Input
                 id="content"
                 type="text"
                 value={formData.content}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, content: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, content: e.target.value }))}
               />
             </div>
 
-            {/* Save Account Checkbox */}
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="saveAccount"
@@ -778,12 +829,7 @@ const TransferToAccount = () => {
               </Label>
             </div>
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={sourceAccounts.length === 0}
-            >
+            <Button type="submit" className="w-full" disabled={sourceAccounts.length === 0}>
               Tiếp tục
             </Button>
           </form>

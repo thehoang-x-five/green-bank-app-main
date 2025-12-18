@@ -1,13 +1,6 @@
 // src/services/userService.ts
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
-import {
-  ref,
-  get,
-  update,
-  query,
-  orderByChild,
-  equalTo,
-} from "firebase/database";
+import { ref, get, update } from "firebase/database";
 import type { AppUserProfile } from "./authService";
 
 /**
@@ -17,16 +10,46 @@ type AppUserSecurityProfile = AppUserProfile & {
   transactionPinHash?: string | null;
   pinFailCount?: number | null;
   pinLockedUntil?: number | null;
+  status?: "ACTIVE" | "LOCKED";
 };
 
 type AccountWithPin = {
   pin?: string | number | null;
   uid?: string | null;
+  status?: "ACTIVE" | "LOCKED";
 };
 
+/* ================== HELPER ================== */
+
+function hashPin(pin: string): string {
+  return btoa(pin);
+}
+
 /**
- * Lấy profile theo uid từ Realtime DB: users/{uid}
+ * 🔒 Khoá user + TẤT CẢ tài khoản thanh toán của user
+ * (PHẢI duyệt toàn bộ accounts vì key = accountNumber)
  */
+async function lockUserAndPaymentAccounts(uid: string): Promise<void> {
+  const updates: Record<string, unknown> = {
+    [`users/${uid}/status`]: "LOCKED",
+  };
+
+  const accSnap = await get(ref(firebaseRtdb, "accounts"));
+  if (accSnap.exists()) {
+    const accounts = accSnap.val() as Record<string, AccountWithPin>;
+    for (const accNumber of Object.keys(accounts)) {
+      const acc = accounts[accNumber];
+      if (acc.uid === uid) {
+        updates[`accounts/${accNumber}/status`] = "LOCKED";
+      }
+    }
+  }
+
+  await update(ref(firebaseRtdb), updates);
+}
+
+/* ================== PROFILE ================== */
+
 export async function getUserProfile(
   uid: string
 ): Promise<AppUserProfile | null> {
@@ -35,40 +58,23 @@ export async function getUserProfile(
   return snap.val() as AppUserProfile;
 }
 
-/**
- * Lấy profile của user hiện đang đăng nhập
- */
 export async function getCurrentUserProfile(): Promise<AppUserProfile | null> {
   const user = firebaseAuth.currentUser;
   if (!user) return null;
   return getUserProfile(user.uid);
 }
 
-/* ================== PIN GIAO DỊCH (TRANSACTION PIN) ================== */
+/* ================== PIN GIAO DỊCH ================== */
 
-function hashPin(pin: string): string {
-  // Đơn giản hoá: dùng base64. Đồ án ok, thực tế nên dùng hash mạnh hơn.
-  return btoa(pin);
-}
-
-/**
- * Thiết lập / thay đổi PIN giao dịch cho user.
- * Lưu tại: users/{uid}/transactionPinHash, pinFailCount, pinLockedUntil
- */
 export async function setTransactionPin(
   uid: string,
   pin: string
 ): Promise<void> {
-  if (!pin) {
-    throw new Error("PIN không được để trống");
-  }
-  if (pin.length < 4 || pin.length > 6) {
+  if (!pin || pin.length < 4 || pin.length > 6) {
     throw new Error("PIN phải từ 4–6 số");
   }
 
-  const userRef = ref(firebaseRtdb, `users/${uid}`);
-
-  await update(userRef, {
+  await update(ref(firebaseRtdb, `users/${uid}`), {
     transactionPinHash: hashPin(pin),
     pinFailCount: 0,
     pinLockedUntil: null,
@@ -76,58 +82,51 @@ export async function setTransactionPin(
 }
 
 /**
- * Xác thực PIN giao dịch.
- * - Nếu đã có transactionPinHash: dùng bình thường.
- * - Nếu CHƯA có transactionPinHash:
- *     + Tìm trong accounts của user xem có account.pin trùng hay không.
- *     + Nếu trùng: coi là đúng, đồng thời migrate => lưu transactionPinHash cho user.
- * - Sai >= 5 lần sẽ khoá trong 10 phút.
+ * ✅ VERIFY PIN – SAI ≥ 5 LẦN → KHOÁ USER + ACCOUNT
  */
 export async function verifyTransactionPin(
   uid: string,
   pin: string
 ): Promise<void> {
-  if (!pin) {
-    throw new Error("PIN không được để trống");
-  }
+  if (!pin) throw new Error("PIN không được để trống");
 
   const userRef = ref(firebaseRtdb, `users/${uid}`);
   const userSnap = await get(userRef);
-
-  const now = Date.now();
-  const data: AppUserSecurityProfile | null = userSnap.exists()
+  const data = userSnap.exists()
     ? (userSnap.val() as AppUserSecurityProfile)
     : null;
 
-  const lockedUntil = data?.pinLockedUntil ?? null;
-  if (typeof lockedUntil === "number" && now < lockedUntil) {
+  const now = Date.now();
+
+  if (
+    typeof data?.pinLockedUntil === "number" &&
+    now < data.pinLockedUntil
+  ) {
     throw new Error(
-      "PIN đang bị khoá tạm thời do nhập sai nhiều lần. Vui lòng thử lại sau ít phút."
+      "PIN đang bị khoá tạm thời do nhập sai nhiều lần. Vui lòng thử lại sau."
     );
   }
 
-  const transactionPinHash = data?.transactionPinHash ?? "";
+  const hash = data?.transactionPinHash;
 
-  // ===== CASE 1: ĐÃ CÓ transactionPinHash -> chỉ cần so sánh hash =====
-  if (transactionPinHash) {
-    if (hashPin(pin) !== transactionPinHash) {
-      const currentFailCount = data?.pinFailCount ?? 0;
-      const newFailCount = currentFailCount + 1;
+  // ===== ĐÃ CÓ PIN =====
+  if (hash) {
+    if (hashPin(pin) !== hash) {
+      const fail = (data?.pinFailCount ?? 0) + 1;
 
-      const updatePayload: Partial<AppUserSecurityProfile> = {
-        pinFailCount: newFailCount,
-      };
+      await update(userRef, {
+        pinFailCount: fail,
+        pinLockedUntil: fail >= 5 ? now + 10 * 60 * 1000 : null,
+      });
 
-      if (newFailCount >= 5) {
-        // Khoá 10 phút
-        updatePayload.pinLockedUntil = now + 10 * 60 * 1000;
+      if (fail >= 5) {
+        await lockUserAndPaymentAccounts(uid);
       }
 
-      await update(userRef, updatePayload);
       throw new Error("Mã PIN giao dịch không đúng");
     }
 
-    // Đúng PIN -> reset bộ đếm + mở khoá nếu có
+    // ĐÚNG PIN
     await update(userRef, {
       pinFailCount: 0,
       pinLockedUntil: null,
@@ -135,54 +134,40 @@ export async function verifyTransactionPin(
     return;
   }
 
-  // ===== CASE 2: CHƯA có transactionPinHash -> fallback sang PIN trong accounts =====
-  const accQuery = query(
-    ref(firebaseRtdb, "accounts"),
-    orderByChild("uid"),
-    equalTo(uid)
-  );
-  const accSnap = await get(accQuery);
-
+  // ===== CHƯA CÓ PIN → CHECK accounts.pin =====
+  const accSnap = await get(ref(firebaseRtdb, "accounts"));
   if (!accSnap.exists()) {
     throw new Error("Bạn chưa thiết lập PIN giao dịch.");
   }
 
-  const raw = accSnap.val() as Record<string, AccountWithPin>;
-
+  const accounts = accSnap.val() as Record<string, AccountWithPin>;
   let matched = false;
 
-  for (const key of Object.keys(raw)) {
-    const acc = raw[key];
-    const pinRaw = acc.pin;
-
-    if (pinRaw === undefined || pinRaw === null) continue;
-
-    const pinStr = typeof pinRaw === "string" ? pinRaw : String(pinRaw);
-
-    if (pinStr === pin) {
+  for (const acc of Object.values(accounts)) {
+    if (acc.uid !== uid) continue;
+    const accPin = acc.pin?.toString();
+    if (accPin === pin) {
       matched = true;
       break;
     }
   }
 
   if (!matched) {
-    const currentFailCount = data?.pinFailCount ?? 0;
-    const newFailCount = currentFailCount + 1;
+    const fail = (data?.pinFailCount ?? 0) + 1;
 
-    const updatePayload: Partial<AppUserSecurityProfile> = {
-      pinFailCount: newFailCount,
-    };
+    await update(userRef, {
+      pinFailCount: fail,
+      pinLockedUntil: fail >= 5 ? now + 10 * 60 * 1000 : null,
+    });
 
-    if (newFailCount >= 5) {
-      updatePayload.pinLockedUntil = now + 10 * 60 * 1000;
+    if (fail >= 5) {
+      await lockUserAndPaymentAccounts(uid);
     }
 
-    await update(userRef, updatePayload);
     throw new Error("Mã PIN giao dịch không đúng");
   }
 
-  // Nếu vào được đây => PIN trùng với 1 account.pin
-  // => coi như user đã thiết lập PIN giao dịch lần đầu.
+  // MIGRATE PIN
   await update(userRef, {
     transactionPinHash: hashPin(pin),
     pinFailCount: 0,

@@ -1,5 +1,6 @@
 // src/pages/TransferOtpConfirm.tsx
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { confirmTransferWithOtp } from "@/services/transferService";
 type TransferState = {
   transfer?: {
     transactionId: string;
-    otpCode: string; // Smart-OTP hiển thị trên màn hình
+    otpCode: string;
     expireAt?: number;
     amount: number;
     content?: string;
@@ -33,7 +34,6 @@ const TransferOtpConfirm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!transfer) {
-    // Không có state -> quay lại màn chuyển khoản
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="space-y-4 text-center">
@@ -46,7 +46,7 @@ const TransferOtpConfirm = () => {
     );
   }
 
-  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
 
     const otpTrimmed = otp.trim();
@@ -61,14 +61,10 @@ const TransferOtpConfirm = () => {
 
     setIsSubmitting(true);
     try {
-      const result = await confirmTransferWithOtp(
-        transfer.transactionId,
-        otpTrimmed
-      );
+      const result = await confirmTransferWithOtp(transfer.transactionId, otpTrimmed);
 
       toast.success("Giao dịch thành công.");
 
-      // Điều hướng sang màn kết quả và hiển thị thông tin
       navigate("/transfer/result", {
         state: {
           result: {
@@ -90,11 +86,9 @@ const TransferOtpConfirm = () => {
           },
         },
       });
-    } catch (error) {
+    } catch (err: unknown) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Có lỗi xảy ra khi xác nhận giao dịch.";
+        err instanceof Error ? err.message : "Có lỗi xảy ra khi xác nhận giao dịch.";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -108,7 +102,6 @@ const TransferOtpConfirm = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
       <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
         <div className="flex items-center gap-4">
           <button
@@ -140,9 +133,7 @@ const TransferOtpConfirm = () => {
             </p>
             <p>
               Tài khoản nguồn:{" "}
-              <span className="font-semibold">
-                {transfer.sourceAccountNumber}
-              </span>
+              <span className="font-semibold">{transfer.sourceAccountNumber}</span>
             </p>
             <p>
               Người nhận:{" "}
@@ -153,7 +144,6 @@ const TransferOtpConfirm = () => {
             </p>
           </div>
 
-          {/* Hiển thị OTP giống MoMo */}
           {formattedOtp && (
             <div className="pt-2 pb-1">
               <p className="text-xs text-muted-foreground text-center mb-1">
@@ -175,17 +165,11 @@ const TransferOtpConfirm = () => {
                 maxLength={6}
                 placeholder="Nhập 6 chữ số OTP"
                 value={otp}
-                onChange={(e) =>
-                  setOtp(e.target.value.replace(/\D/g, ""))
-                }
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
               />
             </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isSubmitting}
-            >
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? "Đang xác thực..." : "Xác nhận thanh toán"}
             </Button>
           </form>

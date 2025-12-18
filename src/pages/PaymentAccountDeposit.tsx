@@ -21,6 +21,22 @@ import { push, ref, set } from "firebase/database";
 // Kiểu direction cho log biến động
 type Direction = "IN" | "OUT";
 
+// ✅ Helper format/parse số tiền nhập (không đổi logic submit)
+const formatVndInput = (raw: string): string => {
+  const digitsOnly = raw.replace(/[^\d]/g, "");
+  if (!digitsOnly) return "";
+  const n = Number(digitsOnly);
+  if (!Number.isFinite(n)) return "";
+  return new Intl.NumberFormat("vi-VN").format(n);
+};
+
+const parseVndInput = (formatted: string): number => {
+  const digitsOnly = formatted.replace(/[^\d]/g, "");
+  if (!digitsOnly) return 0;
+  const n = Number(digitsOnly);
+  return Number.isFinite(n) ? n : 0;
+};
+
 // Helper: ghi log biến động số dư (Nạp / Rút)
 async function createBalanceChangeNotification(params: {
   uid: string;
@@ -101,7 +117,8 @@ const PaymentAccountDeposit = () => {
     e.preventDefault();
     setErrorMsg("");
 
-    const numericAmount = Number(amount);
+    // ✅ FIX: parse số tiền đã format "1.000.000" -> 1000000
+    const numericAmount = parseVndInput(amount);
     if (!numericAmount || numericAmount <= 0) {
       setErrorMsg("Vui lòng nhập số tiền nạp hợp lệ.");
       return;
@@ -187,7 +204,7 @@ const PaymentAccountDeposit = () => {
               );
             }
           }
-        } catch (err) {
+        } catch (err: unknown) {
           console.error("Không lấy được số lần sai PIN:", err);
         }
       }
@@ -240,9 +257,7 @@ const PaymentAccountDeposit = () => {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Chủ tài khoản</span>
-                <span className="font-medium">
-                  {holderName ?? "—"}
-                </span>
+                <span className="font-medium">{holderName ?? "—"}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Số dư hiện tại</span>
@@ -274,24 +289,25 @@ const PaymentAccountDeposit = () => {
                 />
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">
-                    Số tiền nạp
-                  </label>
+                  <label className="text-sm font-medium">Số tiền nạp</label>
+
+                  {/* ✅ FIX: dùng text để hiển thị 1.000.000, vẫn mở bàn phím số */}
                   <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Nhập số tiền (VND)"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                  />
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9.]*"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Nhập số tiền (VND)"
+                  value={amount}
+                  onChange={(e) => setAmount(formatVndInput(e.target.value))}
+                />
+                  <p className="text-xs text-muted-foreground">
+                    Ví dụ: 1.000.000
+                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">
-                    Mã PIN giao dịch
-                  </label>
+                  <label className="text-sm font-medium">Mã PIN giao dịch</label>
                   <input
                     type="password"
                     name="transaction-pin"

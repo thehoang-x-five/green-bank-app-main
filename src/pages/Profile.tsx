@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import {
   ArrowRight,
   User,
-  Settings,
   Shield,
   HelpCircle,
   LogOut,
@@ -31,9 +30,20 @@ type ProfileWithStatus = AppUserProfile & {
   ekycStatus?: string;
 };
 
+// ✅ Key lưu bật/tắt vân tay (không ảnh hưởng logic khác)
+const BIOMETRIC_STORAGE_KEY = "vietbank_biometric_enabled";
+
 const Profile = () => {
   const navigate = useNavigate();
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
+
+  // ✅ Load mặc định từ localStorage để không bị reset sau reload/app restart
+  const [biometricEnabled, setBiometricEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(BIOMETRIC_STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const [profile, setProfile] = useState<ProfileWithStatus | null>(null);
   const [primaryAccount, setPrimaryAccount] = useState<BankAccount | null>(
@@ -41,9 +51,9 @@ const Profile = () => {
   );
   const [loading, setLoading] = useState(true);
 
+  // ✅ ĐÃ XÓA: "Cài đặt tài khoản"
   const menuItems = [
     { icon: User, label: "Thông tin cá nhân", path: "/profile/info" },
-    { icon: Settings, label: "Cài đặt tài khoản", path: "/profile/settings" },
     { icon: Shield, label: "Bảo mật", path: "/profile/security" },
     { icon: HelpCircle, label: "Trợ giúp & Hỗ trợ", path: "/profile/support" },
   ];
@@ -117,8 +127,16 @@ const Profile = () => {
     }
   };
 
+  // ✅ Toggle + persist
   const handleBiometricToggle = (checked: boolean) => {
     setBiometricEnabled(checked);
+
+    try {
+      localStorage.setItem(BIOMETRIC_STORAGE_KEY, checked ? "1" : "0");
+    } catch (err) {
+      console.error("Không thể lưu biometricEnabled:", err);
+    }
+
     toast.success(
       checked
         ? "Đã bật đăng nhập bằng vân tay"
@@ -153,7 +171,6 @@ const Profile = () => {
       accountStatusClass = "text-emerald-700";
     }
   } else if (userStatus === "LOCKED") {
-    // Trường hợp sau này anh khóa toàn bộ user ở mức hồ sơ
     accountStatusText = "Tài khoản ngân hàng đang tạm khóa";
     accountStatusClass = "text-red-700";
   }
@@ -203,7 +220,6 @@ const Profile = () => {
                 </h2>
                 <p className="text-sm text-muted-foreground">{email}</p>
 
-                {/* 🔹 Thay dòng SĐT bằng trạng thái tài khoản ngân hàng */}
                 <p className={`text-sm mt-1 font-medium ${accountStatusClass}`}>
                   {accountStatusText}
                 </p>
@@ -281,7 +297,7 @@ const Profile = () => {
           Đăng xuất
         </Button>
 
-        {/* App Version */}
+        {/* App Version (anh muốn bỏ theo đề thì em cũng bỏ được) */}
         <p className="text-center text-sm text-muted-foreground mt-6">
           Việt Bank v1.0.0
         </p>

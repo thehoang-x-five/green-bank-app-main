@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, User, CreditCard, RefreshCw, Globe } from "lucide-react";
+import { ArrowLeft, User } from "lucide-react";
 
 // ✅ Dùng đúng lib firebase của anh
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
@@ -23,6 +23,7 @@ const Transfer = () => {
   const [savedRecipients, setSavedRecipients] = useState<SavedRecipient[]>([]);
   const [loadingRecipients, setLoadingRecipients] = useState(true);
 
+  // ✅ Chỉ còn 1 chức năng: chuyển tới tài khoản khác bằng STK
   const transferOptions = [
     {
       icon: User,
@@ -30,27 +31,6 @@ const Transfer = () => {
       description: "Chuyển tiền đến tài khoản người khác",
       path: "/transfer/account",
       color: "bg-primary",
-    },
-    {
-      icon: CreditCard,
-      title: "Chuyển tới thẻ",
-      description: "Chuyển tiền đến số thẻ",
-      path: "/transfer/card",
-      color: "bg-secondary",
-    },
-    {
-      icon: RefreshCw,
-      title: "Chuyển tới thẻ/tài khoản của tôi",
-      description: "Chuyển giữa các tài khoản của bạn",
-      path: "/transfer/self",
-      color: "bg-accent",
-    },
-    {
-      icon: Globe,
-      title: "Chuyển tiền quốc tế",
-      description: "Chuyển tiền ra nước ngoài",
-      path: "/transfer/international",
-      color: "bg-info",
     },
   ];
 
