@@ -18,7 +18,11 @@ export default defineConfig(({ mode }) => ({
     host: true,
     port: 5175,
     strictPort: true,
+    allowedHosts: [
+      "nitramino-undifficultly-ernestina.ngrok-free.dev"
+    ]
   },
+
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
