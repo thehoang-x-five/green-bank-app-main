@@ -311,12 +311,20 @@ const App = () => (
           />
 
           {/* Utilities */}
-          <Route path="/utilities/:type" element={<UtilitiesShell />} />
           <Route
             path="/utilities/hotel-booking"
             element={
               <>
                 <HotelBooking />
+                <BottomNav />
+              </>
+            }
+          />
+          <Route
+            path="/utilities/movie-booking"
+            element={
+              <>
+                <MovieBooking />
                 <BottomNav />
               </>
             }
@@ -387,10 +395,6 @@ const App = () => (
             }
           />
 
-          <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
-
-
-          {/* ✅ OTP transfer route */}
           <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
 
           {/* 🔹 Nạp / Rút tài khoản thanh toán (không dùng :id) */}

@@ -1,10 +1,10 @@
 // src/lib/firebase.ts
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, connectAuthEmulator, type Auth } from "firebase/auth";
-import { 
-  initializeFirestore, 
-  connectFirestoreEmulator, 
-  type Firestore 
+import {
+  initializeFirestore,
+  connectFirestoreEmulator,
+  type Firestore,
 } from "firebase/firestore";
 import { getDatabase, type Database } from "firebase/database";
 import {
@@ -12,7 +12,6 @@ import {
   getFunctions,
   type Functions,
 } from "firebase/functions";
-import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBaBxbCTIyyQ66zaYxlyrlDWMUSR0XVyuk",
@@ -90,12 +89,7 @@ if (useEmulator) {
 export const firebaseAuth = fbAuth;
 export const firebaseDb = fbDb;
 export const firebaseRtdb = fbRtdb;
-const app = initializeApp(firebaseConfig);
 
 export const functionsBaseUrl =
   import.meta.env?.VITE_FUNCTIONS_BASE_URL ||
   `https://${functionsRegion}-${firebaseConfig.projectId}.cloudfunctions.net`;
-// Auth / DB export dùng chung
-export const firebaseAuth: Auth = getAuth(app);
-export const firebaseDb = getFirestore(app);
-export const firebaseRtdb = getDatabase(app);

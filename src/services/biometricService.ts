@@ -285,6 +285,11 @@ export interface BiometricVerificationResponse {
   message?: string;
 }
 
+type BiometricThresholdOptions = {
+  reason?: string;
+  threshold?: number;
+};
+
 /**
  * Hàm tiện ích dùng trong UI:
  * - Có plugin: bắt buộc native (không fallback confirm để tránh “lách”)
@@ -338,4 +343,43 @@ export async function runBiometricVerification(
         message: "Có lỗi khi thực hiện xác thực sinh trắc.",
       };
   }
+}
+
+/**
+ * Yêu cầu xác thực sinh trắc nếu giao dịch vượt ngưỡng HIGH_VALUE_THRESHOLD_VND.
+ * - amountVnd < threshold: skip xác thực, trả về success=true
+ * - amountVnd >= threshold: gọi runBiometricVerification với lý do rõ ràng
+ */
+export async function requireBiometricForHighValueVnd(
+  amountVnd: number,
+  options?: BiometricThresholdOptions
+): Promise<BiometricVerificationResponse> {
+  const threshold = options?.threshold ?? HIGH_VALUE_THRESHOLD_VND;
+  const amount = Number(amountVnd);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      success: false,
+      code: "error",
+      message: "Số tiền không hợp lệ để xác thực sinh trắc.",
+    };
+  }
+
+  if (amount < threshold) {
+    return {
+      success: true,
+      code: "ok",
+      message: "Giao dịch dưới ngưỡng, không cần xác thực sinh trắc.",
+    };
+  }
+
+  const reason =
+    options?.reason ??
+    `Giao dịch ${amount.toLocaleString(
+      "vi-VN"
+    )} VND vượt ngưỡng ${threshold.toLocaleString(
+      "vi-VN"
+    )} VND, vui lòng xác thực sinh trắc.`;
+
+  return runBiometricVerification(reason);
 }

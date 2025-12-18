@@ -19,6 +19,7 @@ import type {
   UtilityType,
   BillService,
   SeatClass,
+  FlightOption,
 } from "./utilities/utilityTypes";
 import { MOCK_USER_PHONE, validatePhoneNumber } from "./utilities/utilityData";
 import {
@@ -91,12 +92,16 @@ const headerConfig: Record<
   },
 };
 
+const isUtilityType = (rawType: string | undefined): rawType is UtilityType =>
+  !!rawType && rawType in headerConfig;
+
 const UtilityBills = () => {
   const navigate = useNavigate();
   const { type } = useParams<{ type: UtilityType }>();
   const location = useLocation();
-  const currentType: UtilityType = type ?? "bill";
-  const fromPage: string | null = (location.state as any)?.from ?? null;
+  const currentType: UtilityType = isUtilityType(type) ? type : "bill";
+  const fromPage: string | null =
+    (location.state as { from?: string } | null)?.from ?? null;
   const isMovieFlow = currentType === "movie";
   const isHotelFlow = currentType === "hotel";
 
@@ -144,7 +149,9 @@ const UtilityBills = () => {
   const [billService, setBillService] = useState<BillService | null>(null);
   const [billSave, setBillSave] = useState(false);
 
-  const [selectedFlight, setSelectedFlight] = useState<any>(null);
+  const [selectedFlight, setSelectedFlight] = useState<FlightOption | null>(
+    null
+  );
   const [movieStep, setMovieStep] = useState<1 | 2 | 3>(1);
   const [hotelStep, setHotelStep] = useState<1 | 2 | 3>(1);
   const [selectedHotelRoom, setSelectedHotelRoom] = useState<{
@@ -354,7 +361,12 @@ const UtilityBills = () => {
             onGoTopup={() =>
               navigate("/utilities/phone", { state: { from: "mobilePhone" } })
             }
-            onGoData={() =>
+            onGo3G4G={() =>
+              navigate("/utilities/data", {
+                state: { from: "mobilePhone", entry: "mobile3g4g" },
+              })
+            }
+            onGoData4G={() =>
               navigate("/utilities/data", { state: { from: "mobilePhone" } })
             }
           />

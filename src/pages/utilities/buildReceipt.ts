@@ -115,12 +115,27 @@ export function buildMovieReceipt(
   };
 }
 
+type HotelReceiptOptions = {
+  nights?: number;
+  roomName?: string;
+  nightlyRate?: number;
+};
+
 export function buildHotelReceipt(
-  formData: UtilityFormData
+  formData: UtilityFormData,
+  options?: HotelReceiptOptions
 ): UtilityResultState {
   const now = new Date();
   const rooms = Number(formData.hotelRooms || "1");
-  const amountNumber = 800000 * (isNaN(rooms) ? 1 : rooms);
+  const nights =
+    typeof options?.nights === "number" && options.nights > 0
+      ? Math.round(options.nights)
+      : 1;
+  const nightlyRate = options?.nightlyRate ?? 800000;
+  const roomName = options?.roomName ?? "Phòng tiêu chuẩn";
+
+  const roomsCount = isNaN(rooms) || rooms <= 0 ? 1 : rooms;
+  const amountNumber = nightlyRate * roomsCount * nights;
   const amount = amountNumber.toLocaleString("vi-VN");
   return {
     flow: "hotel",
@@ -133,8 +148,10 @@ export function buildHotelReceipt(
       { label: "Thành phố / Khu vực", value: formData.hotelCity },
       { label: "Ngày nhận phòng", value: formData.hotelCheckIn },
       { label: "Ngày trả phòng", value: formData.hotelCheckOut },
+      { label: "Số đêm", value: String(nights) },
+      { label: "Hạng phòng", value: roomName },
       { label: "Số khách", value: String(formData.hotelGuests || "1") },
-      { label: "Số phòng", value: String(rooms || 1) },
+      { label: "Số phòng", value: String(roomsCount) },
     ],
   };
 }
