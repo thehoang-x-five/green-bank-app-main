@@ -115,6 +115,11 @@ export function buildMovieReceipt(
   };
 }
 
+/**
+ * ✅ [PATCH-HOTEL-OPTIONS] (từ code (2) thêm vào code (1))
+ * - Lý do: tiện ích khách sạn có bước chọn phòng + tính số đêm + giá/đêm
+ * - Giữ nguyên các hàm khác, chỉ mở rộng buildHotelReceipt để khớp UI/logic
+ */
 type HotelReceiptOptions = {
   nights?: number;
   roomName?: string;
