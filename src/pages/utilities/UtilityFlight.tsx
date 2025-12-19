@@ -2,7 +2,22 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
+
+import {
+  fetchFlightInventory,
+  searchFlightsFromInventoryWithAvailability,
+  fetchFlightLocations,
+  fetchRecentLocations,
+  upsertRecentLocation,
+} from "../../services/flightBookingService";
+
 import { toast } from "sonner";
 
 import type {
@@ -49,6 +64,45 @@ const mockFlights: FlightOption[] = [
     price: 5960000,
   },
 ];
+
+const CITY_AIRPORT_API =
+  "https://script.google.com/macros/s/AKfycbzcTGVj1FzBZ_IhgpRE_zHnqHk4v0vmaFidmwA7OqANAQZUts8z1p77Y3h0IYi5amOpuQ/exec";
+
+type ApiCityAirportItem = {
+  code?: string;
+  city?: string;
+  airport?: string;
+  region?: string;
+  name?: string;
+};
+
+async function fetchLocationsFromApi(): Promise<LocationOption[]> {
+  const res = await fetch(CITY_AIRPORT_API);
+  if (!res.ok) throw new Error("Không tải được danh sách sân bay (API).");
+
+  const data = (await res.json()) as unknown;
+
+  const arr: ApiCityAirportItem[] = Array.isArray(data)
+    ? (data as ApiCityAirportItem[])
+    : Array.isArray((data as any)?.data)
+    ? ((data as any).data as ApiCityAirportItem[])
+    : [];
+
+  const mapped: LocationOption[] = arr
+    .map((x) => {
+      const code = (x.code ?? "").trim();
+      const city = (x.city ?? x.name ?? "").trim();
+      const airport = (x.airport ?? "").trim();
+      const region = (x.region ?? "Việt Nam").trim();
+
+      if (!code || !city) return null;
+      return { code, city, airport: airport || city, region };
+    })
+    .filter(Boolean) as LocationOption[];
+
+  // fallback nếu API trả rỗng
+  return mapped.length ? mapped : ALL_LOCATIONS;
+}
 
 const LOCATION_SECTIONS: string[] = [
   "Miền Bắc",
@@ -200,11 +254,14 @@ const ALL_LOCATIONS: LocationOption[] = [
 
 type PassengerField = "adult" | "child" | "infant";
 
-export default function UtilityFlight({
-  formData,
-  setFormData,
-  onConfirm,
-}: Props) {
+type FlightUiHandle = {
+  goBack: () => boolean; // true = đã xử lý back trong Flight UI
+};
+
+const UtilityFlight = forwardRef<FlightUiHandle, Props>(function UtilityFlight(
+  { formData, setFormData, onConfirm }: Props,
+  ref
+) {
   const [flightStep, setFlightStep] = useState<FlightStep>(1);
   const [flightList, setFlightList] = useState<FlightOption[]>(mockFlights);
   const [selectedFlight, setSelectedFlight] = useState<FlightOption | null>(
@@ -229,6 +286,209 @@ export default function UtilityFlight({
 
   const [tempSeatClass, setTempSeatClass] = useState<SeatClass>("all");
 
+  const [locations, setLocations] = useState<LocationOption[]>(ALL_LOCATIONS);
+  const [inventory, setInventory] = useState<FlightOption[]>(mockFlights);
+  const [loadingInventory, setLoadingInventory] = useState(false);
+
+  // ✅ [PATCH-VALIDATION-STATE]
+  // Lỗi validate UI cho Step 1 (không dùng toast cho lỗi thiếu/invalid input)
+  const [fieldErrors, setFieldErrors] = useState<{
+    from?: string;
+    to?: string;
+    date?: string;
+    returnDate?: string;
+    passengers?: string;
+  }>({});
+
+  type SortMode = "priceAsc" | "priceDesc" | "early" | "late" | null;
+  const [sortMode, setSortMode] = useState<SortMode>(null);
+
+  type StopFilter = "direct" | "1stop" | "2plus" | null;
+  type DepartBucket = "00_06" | "06_12" | "12_18" | "18_24" | null;
+
+  type AppliedFilters = {
+    stop: StopFilter;
+    departBucket: DepartBucket;
+    airlines: string[]; // multi select
+  };
+
+  const DEFAULT_FILTERS: AppliedFilters = {
+    stop: null,
+    departBucket: null,
+    airlines: [],
+  };
+
+  const [appliedFilters, setAppliedFilters] =
+    useState<AppliedFilters>(DEFAULT_FILTERS);
+  const [tempFilters, setTempFilters] =
+    useState<AppliedFilters>(DEFAULT_FILTERS);
+
+  // ✅ Khi mở popup Bộ lọc -> sync temp = applied (để “giữ lựa chọn” đúng UX)
+  useEffect(() => {
+    if (!showFilterSheet) return;
+    setTempFilters(appliedFilters);
+  }, [showFilterSheet, appliedFilters]);
+
+  // yyyy-mm-dd theo LOCAL time (tránh lệch ngày do timezone)
+  const getTodayKey = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const todayKey = getTodayKey();
+
+  const extractCode = (v: string) => {
+    const s = (v || "").trim();
+    const idx = s.lastIndexOf("-");
+    if (idx === -1) return s.toUpperCase();
+    return s
+      .slice(idx + 1)
+      .trim()
+      .toUpperCase();
+  };
+
+  const validateSearch = () => {
+    const errs: {
+      from?: string;
+      to?: string;
+      date?: string;
+      returnDate?: string;
+      passengers?: string;
+    } = {};
+
+    const from = String(formData.flightFrom || "").trim();
+    const to = String(formData.flightTo || "").trim();
+    const departDate = String(formData.flightDate || "").trim();
+    const returnDate = String(formData.flightReturnDate || "").trim();
+
+    const paxAdult = parseInt(formData.flightAdult || "0", 10) || 0;
+    const paxChild = parseInt(formData.flightChild || "0", 10) || 0;
+    const paxInfant = parseInt(formData.flightInfant || "0", 10) || 0;
+
+    // 1) Required fields
+    if (!from) errs.from = "Hãy điền đầy đủ thông tin";
+    if (!to) errs.to = "Hãy điền đầy đủ thông tin";
+    if (!departDate) errs.date = "Hãy điền đầy đủ thông tin";
+
+    // 2) From != To (so sánh theo code)
+    if (from && to) {
+      const fromCode = extractCode(from);
+      const toCode = extractCode(to);
+      if (fromCode && toCode && fromCode === toCode) {
+        // Tô đỏ cả 2 ô để người dùng thấy ngay
+        errs.from = "Điểm đi và điểm đến phải khác nhau";
+        errs.to = "Điểm đi và điểm đến phải khác nhau";
+      }
+    }
+
+    // 3) Ngày đi >= hôm nay
+    if (departDate && departDate < todayKey) {
+      errs.date = "Ngày đi không được là ngày trong quá khứ";
+    }
+
+    // 4) Khứ hồi: ngày về không được quá khứ và không nhỏ hơn ngày đi
+    if (isRoundTrip) {
+      if (!returnDate) {
+        errs.returnDate = "Hãy điền đầy đủ thông tin";
+      } else {
+        if (returnDate < todayKey) {
+          errs.returnDate = "Ngày về không được là ngày trong quá khứ";
+        }
+        if (departDate && returnDate < departDate) {
+          errs.returnDate = "Ngày về không được nhỏ hơn ngày đi";
+        }
+      }
+    }
+
+    // 5) Hành khách: tối thiểu 1 người lớn, không được chỉ trẻ em/em bé
+    if (paxAdult < 1) {
+      errs.passengers =
+        "Tối thiểu 1 người lớn (không được chỉ chọn trẻ em/em bé)";
+    }
+
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  // ✅ [PATCH-FLIGHT-UI-BACK]
+  // Expose API cho header back ở UtilityBills:
+  // - Step 3 -> Step 2
+  // - Step 2 -> Step 1
+  // - Step 1 -> return false (để UtilityBills back theo luồng cũ)
+  useImperativeHandle(ref, () => ({
+    goBack: () => {
+      if (flightStep === 3) {
+        setFlightStep(2);
+
+        // ✅ FIX: Khi quay về danh sách thì nút "Chi tiết vé" phải trở lại màu xanh
+        setActiveDetailId(null);
+
+        // optional: reset tab để lần sau vào chi tiết luôn về "info"
+        setFlightTab("info");
+
+        return true;
+      }
+
+      if (flightStep === 2) {
+        setFlightStep(1);
+        setSelectedFlight(null);
+        setFlightTab("info");
+        setShowSortSheet(false);
+        setShowFilterSheet(false);
+        setActiveDetailId(null);
+
+        setSortMode(null);
+        setAppliedFilters(DEFAULT_FILTERS);
+        setTempFilters(DEFAULT_FILTERS);
+        return true;
+      }
+
+      return false;
+    },
+  }));
+
+  useEffect(() => {
+    // ✅ [PATCH - NEW]
+    // Load locations ưu tiên từ RTDB: flightLocations/{CODE}.
+    // Nếu RTDB chưa có seed thì fallback qua API / ALL_LOCATIONS như cũ.
+    (async () => {
+      try {
+        const rtdbList = await fetchFlightLocations();
+        if (rtdbList.length) {
+          setLocations(rtdbList);
+          return;
+        }
+      } catch (e) {
+        // ignore -> fallback dưới
+      }
+
+      try {
+        const apiList = await fetchLocationsFromApi();
+        setLocations(apiList);
+      } catch (e) {
+        // nếu lỗi thì vẫn dùng ALL_LOCATIONS (demo)
+      }
+    })();
+
+    // ✅ [PATCH - NEW]
+    // Load recent locations từ RTDB: flightRecent/{uid}/locations/{from|to}/{CODE}
+    (async () => {
+      try {
+        const [rf, rt] = await Promise.all([
+          fetchRecentLocations({ mode: "from", limit: 5 }),
+          fetchRecentLocations({ mode: "to", limit: 5 }),
+        ]);
+        setRecentFrom(rf);
+        setRecentTo(rt);
+      } catch (e) {
+        // nếu chưa login / chưa có dữ liệu thì để trống (UI đã handle)
+      }
+    })();
+  }, []);
+
   // ✅ [PATCH 1] Người lớn mặc định = 0 (trước là 1)
   const [tempPassengers, setTempPassengers] = useState({
     adult: 0,
@@ -241,55 +501,81 @@ export default function UtilityFlight({
 
   const filteredLocationsFrom = useMemo(() => {
     const keyword = fromSearch.trim().toLowerCase();
-    return ALL_LOCATIONS.filter((loc) => {
+    return locations.filter((loc) => {
       if (!keyword) return true;
       return `${loc.city} ${loc.airport} ${loc.code}`
         .toLowerCase()
         .includes(keyword);
     });
-  }, [fromSearch]);
+  }, [fromSearch, locations]);
 
   const filteredLocationsTo = useMemo(() => {
     const keyword = toSearch.trim().toLowerCase();
-    return ALL_LOCATIONS.filter((loc) => {
+    return locations.filter((loc) => {
       if (!keyword) return true;
       return `${loc.city} ${loc.airport} ${loc.code}`
         .toLowerCase()
         .includes(keyword);
     });
-  }, [toSearch]);
+  }, [toSearch, locations]);
 
-  const handleSearchFlights = () => {
-    if (!formData.flightFrom || !formData.flightTo || !formData.flightDate) {
-      toast.error("Vui lòng chọn Điểm đi, Điểm đến và Ngày đi");
-      return;
+  const handleSearchFlights = async () => {
+    // ✅ [PATCH-SEARCH-VALIDATION]
+    // Validate UI theo yêu cầu: tô đỏ + text đỏ dưới ô (không toast cho lỗi nhập liệu)
+    const ok = validateSearch();
+    if (!ok) return;
+
+    try {
+      setLoadingInventory(true);
+      // ✅ [PATCH - NOTE]
+      // Không cần load toàn bộ inventory ở đây nữa vì searchFlightsFromInventoryWithAvailability
+      // đã tự đọc RTDB và match theo availability theo ngày.
+
+      const fromCode = extractCode(formData.flightFrom);
+      const toCode = extractCode(formData.flightTo);
+
+      const seatClass = formData.flightSeatClass; // "all" | "eco" | "business"
+
+      // ✅ [PATCH - NEW]
+      // Match theo "lịch bay" (availability theo ngày) + check số ghế theo ngày.
+      const paxAdult = parseInt(formData.flightAdult || "0", 10) || 0;
+      const paxChild = parseInt(formData.flightChild || "0", 10) || 0;
+      const paxInfant = parseInt(formData.flightInfant || "0", 10) || 0;
+      const paxTotal = paxAdult + paxChild + paxInfant;
+
+      const list = await searchFlightsFromInventoryWithAvailability({
+        fromCode,
+        toCode,
+        seatClass: (seatClass as any) ?? "all",
+        departDateKey: formData.flightDate,
+        paxTotal: paxTotal,
+      });
+
+      if (!list.length) {
+        toast("Không tìm thấy chuyến bay phù hợp");
+      }
+
+      // giữ nguyên logic: set list + sang step 2 (màn danh sách vé)
+      setFlightList(list);
+      setFlightStep(2);
+
+      // reset active detail khi sang danh sách mới
+      setActiveDetailId(null);
+
+      setSortMode(null);
+      setAppliedFilters(DEFAULT_FILTERS);
+      setTempFilters(DEFAULT_FILTERS);
+    } catch (e) {
+      toast.error("Không tải được danh sách chuyến bay từ hệ thống (RTDB).");
+    } finally {
+      setLoadingInventory(false);
     }
-
-    let list = [...mockFlights];
-    if (formData.flightSeatClass === "eco") {
-      list = list.filter((f) => f.cabin.toLowerCase().includes("economy"));
-    } else if (formData.flightSeatClass === "business") {
-      list = list.filter((f) => f.cabin.toLowerCase().includes("business"));
-    }
-
-    setFlightList(list);
-    setFlightStep(2);
-
-    // ✅ [PATCH 2] reset active detail khi sang danh sách mới
-    setActiveDetailId(null);
   };
 
   const handleSortFlights = (
     mode: "priceAsc" | "priceDesc" | "early" | "late"
   ) => {
-    const sorted = [...flightList];
-    if (mode === "priceAsc") sorted.sort((a, b) => a.price - b.price);
-    if (mode === "priceDesc") sorted.sort((a, b) => b.price - a.price);
-    if (mode === "early")
-      sorted.sort((a, b) => (a.departTime > b.departTime ? 1 : -1));
-    if (mode === "late")
-      sorted.sort((a, b) => (a.departTime < b.departTime ? 1 : -1));
-    setFlightList(sorted);
+    setSortMode(mode);
     setShowSortSheet(false);
   };
 
@@ -317,18 +603,22 @@ export default function UtilityFlight({
     const value = `${loc.city.toUpperCase()} - ${loc.code}`;
     if (mode === "from") {
       setFormData((prev) => ({ ...prev, flightFrom: value }));
+      setFieldErrors((prev) => ({ ...prev, from: undefined }));
       setShowFromLocationSheet(false);
       setFromSearch("");
       setRecentFrom((prev) =>
         [loc, ...prev.filter((x) => x.code !== loc.code)].slice(0, 5)
       );
+      void upsertRecentLocation({ mode: "from", location: loc });
     } else {
       setFormData((prev) => ({ ...prev, flightTo: value }));
+      setFieldErrors((prev) => ({ ...prev, to: undefined }));
       setShowToLocationSheet(false);
       setToSearch("");
       setRecentTo((prev) =>
         [loc, ...prev.filter((x) => x.code !== loc.code)].slice(0, 5)
       );
+      void upsertRecentLocation({ mode: "to", location: loc });
     }
   };
 
@@ -363,7 +653,7 @@ export default function UtilityFlight({
     };
 
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 flex items-end">
+      <div className="fixed top-0 left-0 w-screen h-screen z-[999] bg-black/40 flex items-end">
         <div className="bg-background w-full rounded-t-2xl p-4 max-h-[80vh] flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <p className="text-base font-semibold">{title}</p>
@@ -455,7 +745,7 @@ export default function UtilityFlight({
     const { adult, child, infant } = tempPassengers;
 
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 flex items-end">
+      <div className="fixed top-0 left-0 w-screen h-screen z-[999] bg-black/40 flex items-end">
         <div className="bg-background w-full rounded-t-2xl p-4 max-h-[70vh] flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-semibold">Chọn hành khách</p>
@@ -564,6 +854,7 @@ export default function UtilityFlight({
                 flightChild: String(tempPassengers.child),
                 flightInfant: String(tempPassengers.infant),
               }));
+              setFieldErrors((prev) => ({ ...prev, passengers: undefined }));
               setShowPassengerSheet(false);
             }}
           >
@@ -601,7 +892,7 @@ export default function UtilityFlight({
     };
 
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 flex items-end">
+      <div className="fixed top-0 left-0 w-screen h-screen z-[999] bg-black/40 flex items-end">
         <div className="bg-background w-full rounded-t-2xl p-4 max-h-[70vh] flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-semibold">Chọn hạng ghế</p>
@@ -662,7 +953,9 @@ export default function UtilityFlight({
             <button
               type="button"
               onClick={() => setShowFromLocationSheet(true)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60"
+              className={`w-full rounded-lg border ${
+                fieldErrors.from ? "border-destructive" : "border-input"
+              } bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60`}
             >
               {formData.flightFrom ? (
                 <>
@@ -679,6 +972,11 @@ export default function UtilityFlight({
                 </span>
               )}
             </button>
+            {fieldErrors.from && (
+              <p className="text-[11px] text-destructive mt-1">
+                {fieldErrors.from}
+              </p>
+            )}
           </div>
 
           <div className="hidden md:flex items-center justify-center mt-6 text-primary">
@@ -704,7 +1002,9 @@ export default function UtilityFlight({
             <button
               type="button"
               onClick={() => setShowToLocationSheet(true)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60"
+              className={`w-full rounded-lg border ${
+                fieldErrors.to ? "border-destructive" : "border-input"
+              } bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60`}
             >
               {formData.flightTo ? (
                 <>
@@ -721,6 +1021,11 @@ export default function UtilityFlight({
                 </span>
               )}
             </button>
+            {fieldErrors.to && (
+              <p className="text-[11px] text-destructive mt-1">
+                {fieldErrors.to}
+              </p>
+            )}
           </div>
         </div>
 
@@ -731,11 +1036,22 @@ export default function UtilityFlight({
             </Label>
             <Input
               type="date"
+              min={todayKey}
               value={formData.flightDate}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, flightDate: e.target.value }))
-              }
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  flightDate: e.target.value,
+                }));
+                setFieldErrors((prev) => ({ ...prev, date: undefined }));
+              }}
+              className={fieldErrors.date ? "border-destructive" : undefined}
             />
+            {fieldErrors.date && (
+              <p className="text-[11px] text-destructive mt-1">
+                {fieldErrors.date}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -764,14 +1080,24 @@ export default function UtilityFlight({
             </Label>
             <Input
               type="date"
+              min={formData.flightDate ? formData.flightDate : todayKey}
               value={formData.flightReturnDate}
-              onChange={(e) =>
+              onChange={(e) => {
                 setFormData((prev) => ({
                   ...prev,
                   flightReturnDate: e.target.value,
-                }))
+                }));
+                setFieldErrors((prev) => ({ ...prev, returnDate: undefined }));
+              }}
+              className={
+                fieldErrors.returnDate ? "border-destructive" : undefined
               }
             />
+            {fieldErrors.returnDate && (
+              <p className="text-[11px] text-destructive mt-1">
+                {fieldErrors.returnDate}
+              </p>
+            )}
           </div>
         )}
 
@@ -814,7 +1140,9 @@ export default function UtilityFlight({
                 });
                 setShowPassengerSheet(true);
               }}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60"
+              className={`w-full rounded-lg border ${
+                fieldErrors.passengers ? "border-destructive" : "border-input"
+              } bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60`}
             >
               <span className="font-medium text-foreground">
                 {adult} người lớn, {child} trẻ em, {infant} em bé
@@ -823,6 +1151,11 @@ export default function UtilityFlight({
                 Điều chỉnh số lượng theo từng loại
               </span>
             </button>
+            {fieldErrors.passengers && (
+              <p className="text-[11px] text-destructive mt-1">
+                {fieldErrors.passengers}
+              </p>
+            )}
           </div>
         </div>
 
@@ -830,8 +1163,16 @@ export default function UtilityFlight({
           type="button"
           className="w-full mt-2"
           onClick={handleSearchFlights}
+          disabled={loadingInventory}
         >
-          Tìm chuyến bay
+          {loadingInventory ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              Đang tìm...
+            </span>
+          ) : (
+            "Tìm chuyến bay"
+          )}
         </Button>
 
         <p className="text-xs text-muted-foreground mt-3">
@@ -839,27 +1180,6 @@ export default function UtilityFlight({
           <span className="text-primary font-semibold">1900 23 23 55</span> để
           hỗ trợ đặt vé.
         </p>
-
-        <div className="mt-4 space-y-3">
-          <Card className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/60">
-            <div>
-              <p className="text-sm font-medium">Đơn hàng của tôi</p>
-              <p className="text-xs text-muted-foreground">
-                Xem lại các đơn đặt vé máy bay gần đây (demo)
-              </p>
-            </div>
-            <span className="text-sm text-primary font-semibold">Chi tiết</span>
-          </Card>
-
-          <Card className="p-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white">
-            <p className="text-sm font-semibold mb-1">
-              Ưu đãi đặt vé máy bay lên đến 2.000.000 VND
-            </p>
-            <p className="text-xs opacity-90">
-              Khi đặt vé qua ứng dụng Việt Bank (demo). Nội dung minh họa.
-            </p>
-          </Card>
-        </div>
 
         {renderLocationSheet("from")}
         {renderLocationSheet("to")}
@@ -869,14 +1189,96 @@ export default function UtilityFlight({
     );
   };
 
+  // ✅ [PATCH-FLIGHT-SORT-FILTER-HELPERS] — helper lọc/sort danh sách
+  const toMinutes = (hhmm: string) => {
+    const s = (hhmm || "").trim();
+    const [hhRaw, mmRaw] = s.split(":");
+    const hh = parseInt(hhRaw || "0", 10) || 0;
+    const mm = parseInt(mmRaw || "0", 10) || 0;
+    return hh * 60 + mm;
+  };
+
+  const matchDepartBucket = (t: string, bucket: DepartBucket) => {
+    if (!bucket) return true;
+    const m = toMinutes(t);
+    if (bucket === "00_06") return m >= 0 && m < 360;
+    if (bucket === "06_12") return m >= 360 && m < 720;
+    if (bucket === "12_18") return m >= 720 && m < 1080;
+    return m >= 1080 && m < 1440; // 18_24
+  };
+
+  const getStops = (f: FlightOption) => {
+    // dữ liệu demo hiện chưa có stops, nên mặc định 0 (bay thẳng)
+    const anyStops = (f as any)?.stops;
+    const n = typeof anyStops === "number" ? anyStops : 0;
+    return n;
+  };
+
+  const matchStopFilter = (f: FlightOption, stop: StopFilter) => {
+    if (!stop) return true;
+    const n = getStops(f);
+    if (stop === "direct") return n === 0;
+    if (stop === "1stop") return n === 1;
+    return n >= 2;
+  };
+
+  const visibleFlights = useMemo(() => {
+    // 1) filter
+    let arr = [...flightList];
+
+    arr = arr.filter((f) => matchStopFilter(f, appliedFilters.stop));
+    arr = arr.filter((f) =>
+      matchDepartBucket(f.departTime, appliedFilters.departBucket)
+    );
+
+    if (appliedFilters.airlines.length > 0) {
+      arr = arr.filter((f) => appliedFilters.airlines.includes(f.airline));
+    }
+
+    // 2) sort
+    if (sortMode === "priceAsc") arr.sort((a, b) => a.price - b.price);
+    if (sortMode === "priceDesc") arr.sort((a, b) => b.price - a.price);
+    if (sortMode === "early")
+      arr.sort((a, b) => (a.departTime > b.departTime ? 1 : -1));
+    if (sortMode === "late")
+      arr.sort((a, b) => (a.departTime < b.departTime ? 1 : -1));
+
+    return arr;
+  }, [flightList, appliedFilters, sortMode]);
+
+  // ✅ [PATCH-FLIGHT-SORT-FILTER-AIRLINES] — danh sách hãng từ list hiện có
+  const airlineOptions = useMemo(() => {
+    const set = new Set<string>();
+    flightList.forEach((f) => set.add(f.airline));
+    return Array.from(set);
+  }, [flightList]);
+
+  const toggleAirlineTemp = (name: string) => {
+    setTempFilters((prev) => {
+      const exists = prev.airlines.includes(name);
+      const next = exists
+        ? prev.airlines.filter((x) => x !== name)
+        : [...prev.airlines, name];
+      return { ...prev, airlines: next };
+    });
+  };
+
+  const isAirlineSelectedTemp = (name: string) =>
+    tempFilters.airlines.includes(name);
+
+  const filterBtnActive =
+    "bg-primary text-primary-foreground border-primary hover:bg-primary/90";
+  const filterBtnIdle =
+    "hover:bg-primary hover:text-primary-foreground hover:border-primary";
+
   const renderFlightStep2 = () => (
     <>
       <p className="text-sm text-muted-foreground mb-2">
-        Chọn vé chiều đi phù hợp. Giá đã bao gồm thuế & phí (demo).
+        Chọn vé chiều đi phù hợp. Giá đã bao gồm thuế & phí
       </p>
 
       <div className="space-y-3">
-        {flightList.map((f) => {
+        {visibleFlights.map((f) => {
           const isActiveDetail = activeDetailId === f.id;
 
           return (
@@ -956,7 +1358,7 @@ export default function UtilityFlight({
       </div>
 
       <div className="fixed left-0 right-0 bottom-4 px-6 z-40">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Button
             type="button"
             variant="outline"
@@ -971,46 +1373,37 @@ export default function UtilityFlight({
           >
             Bộ lọc
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              toast.info("Màn hình tóm tắt giá vé đang ở dạng demo")
-            }
-          >
-            Tóm tắt
-          </Button>
         </div>
       </div>
 
       {showSortSheet && (
-        <div className="fixed inset-0 z-40 bg-black/40 flex items-end">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[999] bg-black/40 flex items-end">
           <div className="bg-background w-full rounded-t-2xl p-4 space-y-2">
             <p className="text-sm font-semibold mb-2">Sắp xếp theo</p>
             <button
               type="button"
-              className="w-full text-left py-2 text-sm"
+              className="w-full text-left py-2 text-sm rounded-lg hover:bg-primary hover:text-primary-foreground"
               onClick={() => handleSortFlights("priceAsc")}
             >
               Giá thấp nhất
             </button>
             <button
               type="button"
-              className="w-full text-left py-2 text-sm"
+              className="w-full text-left py-2 text-sm rounded-lg hover:bg-primary hover:text-primary-foreground"
               onClick={() => handleSortFlights("priceDesc")}
             >
               Giá cao nhất
             </button>
             <button
               type="button"
-              className="w-full text-left py-2 text-sm"
+              className="w-full text-left py-2 text-sm rounded-lg hover:bg-primary hover:text-primary-foreground"
               onClick={() => handleSortFlights("early")}
             >
               Giờ bay sớm nhất
             </button>
             <button
               type="button"
-              className="w-full text-left py-2 text-sm"
+              className="w-full text-left py-2 text-sm rounded-lg hover:bg-primary hover:text-primary-foreground"
               onClick={() => handleSortFlights("late")}
             >
               Giờ bay muộn nhất
@@ -1028,14 +1421,16 @@ export default function UtilityFlight({
       )}
 
       {showFilterSheet && (
-        <div className="fixed inset-0 z-40 bg-black/40 flex items-end">
+        <div className="fixed top-0 left-0 w-screen h-screen z-[999] bg-black/40 flex items-end">
           <div className="bg-background w-full rounded-t-2xl p-4 space-y-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold">Bộ lọc</p>
               <button
                 type="button"
                 className="text-xs text-primary"
-                onClick={() => toast.info("Đặt lại bộ lọc (demo)")}
+                onClick={() => {
+                  setTempFilters(DEFAULT_FILTERS);
+                }}
               >
                 Đặt lại
               </button>
@@ -1046,13 +1441,57 @@ export default function UtilityFlight({
                 Quá cảnh
               </p>
               <div className="grid grid-cols-3 gap-2 text-xs">
-                <Button type="button" variant="outline">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.stop === "direct"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      stop: p.stop === "direct" ? null : "direct",
+                    }))
+                  }
+                >
                   Bay thẳng
                 </Button>
-                <Button type="button" variant="outline">
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.stop === "1stop"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      stop: p.stop === "1stop" ? null : "1stop",
+                    }))
+                  }
+                >
                   1 điểm dừng
                 </Button>
-                <Button type="button" variant="outline">
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.stop === "2plus"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      stop: p.stop === "2plus" ? null : "2plus",
+                    }))
+                  }
+                >
                   + 2 điểm dừng
                 </Button>
               </div>
@@ -1063,16 +1502,75 @@ export default function UtilityFlight({
                 Giờ cất cánh
               </p>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <Button type="button" variant="outline">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.departBucket === "00_06"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      departBucket: p.departBucket === "00_06" ? null : "00_06",
+                    }))
+                  }
+                >
                   00:00 - 06:00 • Sáng sớm
                 </Button>
-                <Button type="button" variant="outline">
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.departBucket === "06_12"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      departBucket: p.departBucket === "06_12" ? null : "06_12",
+                    }))
+                  }
+                >
                   06:00 - 12:00 • Buổi sáng
                 </Button>
-                <Button type="button" variant="outline">
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.departBucket === "12_18"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      departBucket: p.departBucket === "12_18" ? null : "12_18",
+                    }))
+                  }
+                >
                   12:00 - 18:00 • Buổi chiều
                 </Button>
-                <Button type="button" variant="outline">
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={
+                    tempFilters.departBucket === "18_24"
+                      ? filterBtnActive
+                      : filterBtnIdle
+                  }
+                  onClick={() =>
+                    setTempFilters((p) => ({
+                      ...p,
+                      departBucket: p.departBucket === "18_24" ? null : "18_24",
+                    }))
+                  }
+                >
                   18:00 - 24:00 • Buổi tối
                 </Button>
               </div>
@@ -1082,17 +1580,32 @@ export default function UtilityFlight({
               <p className="text-xs font-semibold text-muted-foreground">
                 Hãng hàng không
               </p>
-              <div className="space-y-1 text-sm">
-                <p>Bamboo Airways</p>
-                <p>VietJet Air</p>
-                <p>Vietnam Airlines</p>
+              <div className="flex flex-wrap gap-2">
+                {airlineOptions.map((name) => {
+                  const active = isAirlineSelectedTemp(name);
+                  return (
+                    <Button
+                      key={name}
+                      type="button"
+                      variant="outline"
+                      className={active ? filterBtnActive : filterBtnIdle}
+                      onClick={() => toggleAirlineTemp(name)}
+                    >
+                      {name}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
 
             <Button
               type="button"
               className="w-full mt-2"
-              onClick={() => setShowFilterSheet(false)}
+              onClick={() => {
+                // ✅ [PATCH-FILTER-APPLY] — apply lọc thật vào danh sách
+                setAppliedFilters(tempFilters);
+                setShowFilterSheet(false);
+              }}
             >
               Áp dụng
             </Button>
@@ -1177,9 +1690,7 @@ export default function UtilityFlight({
           </div>
         ) : (
           <div className="space-y-2 text-sm">
-            <p className="font-semibold mb-2">
-              Điều kiện vé (mô phỏng theo app thực tế)
-            </p>
+            <p className="font-semibold mb-2">Điều kiện vé</p>
             <ul className="list-disc pl-5 space-y-1">
               <li>Hành lý xách tay: 10 Kg</li>
               <li>Hành lý ký gửi: 23 Kg</li>
@@ -1209,4 +1720,6 @@ export default function UtilityFlight({
   if (flightStep === 1) return renderFlightStep1();
   if (flightStep === 2) return renderFlightStep2();
   return renderFlightStep3();
-}
+});
+
+export default UtilityFlight;
