@@ -1,7 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, CheckCircle2, Download, Share2, Ticket } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  Share2,
+  Ticket,
+} from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -98,7 +104,9 @@ const UtilityReceipt = () => {
                 <p className="text-3xl font-bold text-foreground">
                   {data.amount} VND
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">{data.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {data.title}
+                </p>
               </div>
               <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-emerald-700">
                 <CheckCircle2 className="h-5 w-5" />
