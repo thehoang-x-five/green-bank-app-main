@@ -61,7 +61,10 @@ const TransferOtpConfirm = () => {
 
     setIsSubmitting(true);
     try {
-      const result = await confirmTransferWithOtp(transfer.transactionId, otpTrimmed);
+      const result = await confirmTransferWithOtp(
+        transfer.transactionId,
+        otpTrimmed
+      );
 
       toast.success("Giao dịch thành công.");
 
@@ -88,7 +91,9 @@ const TransferOtpConfirm = () => {
       });
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Có lỗi xảy ra khi xác nhận giao dịch.";
+        err instanceof Error
+          ? err.message
+          : "Có lỗi xảy ra khi xác nhận giao dịch.";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -133,13 +138,15 @@ const TransferOtpConfirm = () => {
             </p>
             <p>
               Tài khoản nguồn:{" "}
-              <span className="font-semibold">{transfer.sourceAccountNumber}</span>
+              <span className="font-semibold">
+                {transfer.sourceAccountNumber}
+              </span>
             </p>
             <p>
               Người nhận:{" "}
               <span className="font-semibold">
-                {transfer.destinationName} - {transfer.destinationAccountNumber} (
-                {transfer.bankName})
+                {transfer.destinationName} - {transfer.destinationAccountNumber}{" "}
+                ({transfer.bankName})
               </span>
             </p>
           </div>

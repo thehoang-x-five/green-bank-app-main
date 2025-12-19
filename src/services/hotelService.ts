@@ -37,9 +37,11 @@ export type HotelItem = {
 
 const HOTELS_LIMIT = 50;
 
-export async function searchHotels(params: HotelSearchParams): Promise<HotelItem[]> {
+export async function searchHotels(
+  params: HotelSearchParams
+): Promise<HotelItem[]> {
   console.log("[searchHotels] Searching with cityKey:", params.cityKey);
-  
+
   const hotelsRef = collection(fbDb, "hotels");
   const baseQuery = query(
     hotelsRef,

@@ -47,8 +47,15 @@ async function createBalanceChangeNotification(params: {
   accountNumber: string;
   balanceAfter: number;
 }): Promise<void> {
-  const { uid, direction, title, message, amount, accountNumber, balanceAfter } =
-    params;
+  const {
+    uid,
+    direction,
+    title,
+    message,
+    amount,
+    accountNumber,
+    balanceAfter,
+  } = params;
 
   const notiListRef = ref(firebaseRtdb, `notifications/${uid}`);
   const newRef = push(notiListRef);
@@ -293,21 +300,23 @@ const PaymentAccountDeposit = () => {
 
                   {/* ✅ FIX: dùng text để hiển thị 1.000.000, vẫn mở bàn phím số */}
                   <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9.]*"
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Nhập số tiền (VND)"
-                  value={amount}
-                  onChange={(e) => setAmount(formatVndInput(e.target.value))}
-                />
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9.]*"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Nhập số tiền (VND)"
+                    value={amount}
+                    onChange={(e) => setAmount(formatVndInput(e.target.value))}
+                  />
                   <p className="text-xs text-muted-foreground">
                     Ví dụ: 1.000.000
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Mã PIN giao dịch</label>
+                  <label className="text-sm font-medium">
+                    Mã PIN giao dịch
+                  </label>
                   <input
                     type="password"
                     name="transaction-pin"

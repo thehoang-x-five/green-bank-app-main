@@ -34,7 +34,9 @@ async function callCountriesNow<T>(payload: CountriesNowRequest): Promise<T> {
 }
 
 export async function fetchCountries(): Promise<string[]> {
-  const data = await callCountriesNow<{ data?: string[] }>({ action: "countries" });
+  const data = await callCountriesNow<{ data?: string[] }>({
+    action: "countries",
+  });
   return data.data ?? [];
 }
 
@@ -85,7 +87,10 @@ export async function fetchVnCities(): Promise<VnLocation[]> {
 
 export async function fetchVnProvinces(): Promise<any[]> {
   try {
-    const res = await fetch(`${baseUrl}/getVnProvinces`, { method: "GET", headers });
+    const res = await fetch(`${baseUrl}/getVnProvinces`, {
+      method: "GET",
+      headers,
+    });
     if (!res.ok) throw new Error(String(res.status));
     const json = await res.json();
     return Array.isArray(json?.data) ? json.data : [];
@@ -97,10 +102,13 @@ export async function fetchVnProvinces(): Promise<any[]> {
 
 export async function fetchVnDistricts(provinceCode: string): Promise<any[]> {
   try {
-    const res = await fetch(`${baseUrl}/getVnDistricts?provinceCode=${provinceCode}`, {
-      method: "GET",
-      headers,
-    });
+    const res = await fetch(
+      `${baseUrl}/getVnDistricts?provinceCode=${provinceCode}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
     if (!res.ok) throw new Error(String(res.status));
     const json = await res.json();
     return Array.isArray(json?.data) ? json.data : [];
@@ -112,10 +120,13 @@ export async function fetchVnDistricts(provinceCode: string): Promise<any[]> {
 
 export async function fetchVnWards(districtCode: string): Promise<any[]> {
   try {
-    const res = await fetch(`${baseUrl}/getVnWards?districtCode=${districtCode}`, {
-      method: "GET",
-      headers,
-    });
+    const res = await fetch(
+      `${baseUrl}/getVnWards?districtCode=${districtCode}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
     if (!res.ok) throw new Error(String(res.status));
     const json = await res.json();
     return Array.isArray(json?.data) ? json.data : [];

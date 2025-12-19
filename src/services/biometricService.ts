@@ -30,7 +30,11 @@ type SuccessCb = (res?: unknown) => void;
 type ErrorCb = (err?: unknown) => void;
 
 type PromiseStyleFn<O> = (options: O) => Promise<unknown>;
-type CallbackStyleFn<O> = (options: O, success: SuccessCb, error: ErrorCb) => void;
+type CallbackStyleFn<O> = (
+  options: O,
+  success: SuccessCb,
+  error: ErrorCb
+) => void;
 
 type BiometricFn<O> = PromiseStyleFn<O> | CallbackStyleFn<O>;
 
@@ -98,7 +102,9 @@ function normalizeError(err: unknown): { code?: unknown; message: string } {
   return { message: String(err ?? "") };
 }
 
-function isThenable(x: unknown): x is { then: (...args: unknown[]) => unknown } {
+function isThenable(
+  x: unknown
+): x is { then: (...args: unknown[]) => unknown } {
   if (typeof x !== "object" || x === null) return false;
   const rec = x as Record<string, unknown>;
   return typeof rec["then"] === "function";
@@ -108,7 +114,13 @@ function hasExplicitFalseFlag(result: unknown): boolean {
   if (typeof result !== "object" || result === null) return false;
   const r = result as Record<string, unknown>;
 
-  const keys = ["verified", "success", "authenticated", "isVerified", "authorized"];
+  const keys = [
+    "verified",
+    "success",
+    "authenticated",
+    "isVerified",
+    "authorized",
+  ];
   for (const k of keys) {
     if (typeof r[k] === "boolean" && r[k] === false) return true;
   }
@@ -141,8 +153,8 @@ function isUnavailableOrNotEnrolled(err: unknown): boolean {
     typeof code === "number"
       ? code
       : typeof code === "string"
-        ? Number(code)
-        : Number.NaN;
+      ? Number(code)
+      : Number.NaN;
 
   return (
     codeNum === 1 ||
@@ -302,15 +314,16 @@ export async function runBiometricVerification(
     "vi-VN"
   )} VND). Vui lòng xác thực sinh trắc (vân tay / FaceID).`;
 
-  const reasonText = reason && reason.trim().length > 0 ? reason : defaultReason;
+  const reasonText =
+    reason && reason.trim().length > 0 ? reason : defaultReason;
 
   const plugin = getBiometricPlugin();
 
   const finalCode: BiometricResult = plugin
     ? await tryNativeBiometric(reasonText)
     : !isNativeRuntime()
-      ? await fallbackConfirm(reasonText)
-      : "unavailable";
+    ? await fallbackConfirm(reasonText)
+    : "unavailable";
 
   switch (finalCode) {
     case "ok":

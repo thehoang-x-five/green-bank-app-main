@@ -112,7 +112,9 @@ type RtdbUserLite = {
 };
 
 function upper(v: unknown): string {
-  return String(v ?? "").trim().toUpperCase();
+  return String(v ?? "")
+    .trim()
+    .toUpperCase();
 }
 
 function isKycVerified(u: RtdbUserLite): boolean {
@@ -160,7 +162,9 @@ async function assertReceiverEligibleOrThrow(
   }
 
   if (!isKycVerified(u)) {
-    throw new Error("Tài khoản thụ hưởng chưa hoàn tất eKYC, không thể nhận tiền.");
+    throw new Error(
+      "Tài khoản thụ hưởng chưa hoàn tất eKYC, không thể nhận tiền."
+    );
   }
 
   // Nếu anh bắt buộc người nhận cũng phải được bật giao dịch
@@ -177,7 +181,8 @@ async function assertReceiverEligibleOrThrow(
 
 function requireCurrentUser() {
   const currentUser = firebaseAuth.currentUser;
-  if (!currentUser) throw new Error("Bạn cần đăng nhập để thực hiện giao dịch.");
+  if (!currentUser)
+    throw new Error("Bạn cần đăng nhập để thực hiện giao dịch.");
   return currentUser;
 }
 
@@ -272,7 +277,8 @@ export async function initiateTransferToAccount(
   if (!req.amount || req.amount <= 0) throw new Error("Số tiền không hợp lệ.");
 
   const userSnap = await get(ref(firebaseRtdb, `users/${currentUser.uid}`));
-  if (!userSnap.exists()) throw new Error("Không tìm thấy thông tin khách hàng.");
+  if (!userSnap.exists())
+    throw new Error("Không tìm thấy thông tin khách hàng.");
 
   const profile = userSnap.val() as AppUserProfile;
 
@@ -292,7 +298,8 @@ export async function initiateTransferToAccount(
   const sourceAccSnap = await get(
     ref(firebaseRtdb, `accounts/${req.sourceAccountNumber}`)
   );
-  if (!sourceAccSnap.exists()) throw new Error("Không tìm thấy tài khoản nguồn.");
+  if (!sourceAccSnap.exists())
+    throw new Error("Không tìm thấy tài khoản nguồn.");
 
   const sourceAcc = sourceAccSnap.val() as RtdbAccount;
 
@@ -363,7 +370,9 @@ export async function initiateTransferToAccount(
     );
     const extSnap = await get(extRef);
     if (!extSnap.exists()) {
-      throw new Error(`Không tìm thấy tài khoản nhận tại ngân hàng ${req.bankName}.`);
+      throw new Error(
+        `Không tìm thấy tài khoản nhận tại ngân hàng ${req.bankName}.`
+      );
     }
 
     const extAcc = extSnap.val() as ExternalAccount;
@@ -387,10 +396,7 @@ export async function initiateTransferToAccount(
     sourceAccountNumber: req.sourceAccountNumber,
     destinationAccountNumber: req.destinationAccountNumber,
     destinationName:
-      req.destinationName ??
-      externalDest?.fullName ??
-      externalDest?.name ??
-      "",
+      req.destinationName ?? externalDest?.fullName ?? externalDest?.name ?? "",
     destinationBankName: req.bankName,
     destinationBankCode: req.bankCode ?? "",
     amount: req.amount,
@@ -427,7 +433,9 @@ export async function initiateTransferToAccount(
   await sendOtpEmailDev(profile.email, otpCode, txnId);
 
   if (req.saveRecipient) {
-    const recipientKey = `${req.bankCode ?? req.bankName}_${req.destinationAccountNumber}`;
+    const recipientKey = `${req.bankCode ?? req.bankName}_${
+      req.destinationAccountNumber
+    }`;
 
     const realName =
       (req.destinationName && req.destinationName.trim()) ||
@@ -437,14 +445,17 @@ export async function initiateTransferToAccount(
 
     const nickname = req.nickname?.trim() || "";
 
-    await set(ref(firebaseRtdb, `savedRecipients/${currentUser.uid}/${recipientKey}`), {
-      name: realName,
-      accountNumber: req.destinationAccountNumber,
-      bankName: req.bankName,
-      bankCode: req.bankCode ?? "",
-      nickname,
-      updatedAt: now,
-    });
+    await set(
+      ref(firebaseRtdb, `savedRecipients/${currentUser.uid}/${recipientKey}`),
+      {
+        name: realName,
+        accountNumber: req.destinationAccountNumber,
+        bankName: req.bankName,
+        bankCode: req.bankCode ?? "",
+        nickname,
+        updatedAt: now,
+      }
+    );
   }
 
   return {
@@ -609,18 +620,30 @@ export async function confirmTransferWithOtp(
   const historyPromises: Promise<void>[] = [];
 
   historyPromises.push(
-    set(ref(firebaseRtdb, `accountTransactions/${sourceAccNumber}/${transactionId}`), {
-      ...historyItem,
-      direction: "OUT",
-    }).then(() => undefined)
+    set(
+      ref(
+        firebaseRtdb,
+        `accountTransactions/${sourceAccNumber}/${transactionId}`
+      ),
+      {
+        ...historyItem,
+        direction: "OUT",
+      }
+    ).then(() => undefined)
   );
 
   if (isInternal && destAccNumber) {
     historyPromises.push(
-      set(ref(firebaseRtdb, `accountTransactions/${destAccNumber}/${transactionId}`), {
-        ...historyItem,
-        direction: "IN",
-      }).then(() => undefined)
+      set(
+        ref(
+          firebaseRtdb,
+          `accountTransactions/${destAccNumber}/${transactionId}`
+        ),
+        {
+          ...historyItem,
+          direction: "IN",
+        }
+      ).then(() => undefined)
     );
   }
 
@@ -628,24 +651,28 @@ export async function confirmTransferWithOtp(
 
   const notificationsPromises: Promise<void>[] = [];
 
-  const destDisplayName = txn.destinationName || destAccNumber || "tài khoản khác";
+  const destDisplayName =
+    txn.destinationName || destAccNumber || "tài khoản khác";
   const senderTitle = `Chuyển tiền đến ${destDisplayName}`;
   const senderMessage = `Đã chuyển ${amount.toLocaleString(
     "vi-VN"
   )} VND đến ${destDisplayName}${destBankName ? ` (${destBankName})` : ""}.`;
 
   notificationsPromises.push(
-    set(ref(firebaseRtdb, `notifications/${currentUser.uid}/${transactionId}`), {
-      type: "BALANCE_CHANGE",
-      direction: "OUT",
-      title: senderTitle,
-      message: senderMessage,
-      amount,
-      accountNumber: sourceAccNumber,
-      balanceAfter: newSourceBalance,
-      transactionId,
-      createdAt: now,
-    }).then(() => undefined)
+    set(
+      ref(firebaseRtdb, `notifications/${currentUser.uid}/${transactionId}`),
+      {
+        type: "BALANCE_CHANGE",
+        direction: "OUT",
+        title: senderTitle,
+        message: senderMessage,
+        amount,
+        accountNumber: sourceAccNumber,
+        balanceAfter: newSourceBalance,
+        transactionId,
+        createdAt: now,
+      }
+    ).then(() => undefined)
   );
 
   const receiverUid = txn.destAccUid;

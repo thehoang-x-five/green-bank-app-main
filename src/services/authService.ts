@@ -115,7 +115,8 @@ function normalizeEmailForQuery(raw: string): string {
 }
 
 function toSafeNonNegInt(v: unknown): number {
-  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return Math.floor(v);
+  if (typeof v === "number" && Number.isFinite(v) && v >= 0)
+    return Math.floor(v);
   if (typeof v === "string") {
     const n = Number(v);
     if (Number.isFinite(n) && n >= 0) return Math.floor(n);
@@ -161,7 +162,9 @@ async function getUserNodeByUid(uid: string): Promise<UserNode | null> {
   return snap.val() as UserNode;
 }
 
-async function getUserNodeByEmail(email: string): Promise<{ uid: string; node: UserNode } | null> {
+async function getUserNodeByEmail(
+  email: string
+): Promise<{ uid: string; node: UserNode } | null> {
   const uid = await findUserUidByEmail(email);
   if (!uid) return null;
 
@@ -177,11 +180,15 @@ async function assertNotLockedByEmail(email: string): Promise<void> {
 
   const status = hit.node.status;
   if (isLockedStatus(status)) {
-    throw new Error("Tài khoản đã bị tạm khóa do đăng nhập sai quá 5 lần. Vui lòng liên hệ nhân viên để mở khóa.");
+    throw new Error(
+      "Tài khoản đã bị tạm khóa do đăng nhập sai quá 5 lần. Vui lòng liên hệ nhân viên để mở khóa."
+    );
   }
 }
 
-async function recordLoginFailureByEmail(email: string): Promise<RecordLoginFailureResult> {
+async function recordLoginFailureByEmail(
+  email: string
+): Promise<RecordLoginFailureResult> {
   const hit = await getUserNodeByEmail(email);
 
   // Nếu email chưa có trong users => không tăng đếm (tránh lộ thông tin user)
@@ -238,13 +245,19 @@ async function recordLoginFailureByEmail(email: string): Promise<RecordLoginFail
     return nextUser;
   });
 
-  const attemptsLeft = clamp(MAX_LOGIN_ATTEMPTS - newFailCount, 0, MAX_LOGIN_ATTEMPTS);
+  const attemptsLeft = clamp(
+    MAX_LOGIN_ATTEMPTS - newFailCount,
+    0,
+    MAX_LOGIN_ATTEMPTS
+  );
   return { attemptsLeft, locked, failCount: newFailCount };
 }
 
 async function resetLoginFailuresByUid(uid: string): Promise<void> {
   if (!uid) return;
-  await update(ref(firebaseRtdb, `users/${uid}/security`), { loginFailCount: 0 });
+  await update(ref(firebaseRtdb, `users/${uid}/security`), {
+    loginFailCount: 0,
+  });
 }
 
 /* ===================== BIOMETRIC LOGIN (DEMO) ===================== */
@@ -269,7 +282,8 @@ function isNonEmptyString(x: unknown): x is string {
 function safeB64Encode(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
-  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += 1)
+    binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
@@ -351,13 +365,17 @@ export async function loginWithBiometric(): Promise<{
 }> {
   const stored = readBiometricCredential();
   if (!stored) {
-    throw new Error("Bạn cần đăng nhập bằng mật khẩu 1 lần để bật đăng nhập vân tay.");
+    throw new Error(
+      "Bạn cần đăng nhập bằng mật khẩu 1 lần để bật đăng nhập vân tay."
+    );
   }
 
   // ✅ check lock trước khi cho quét
   await assertNotLockedByEmail(stored.email);
 
-  const bio = await runBiometricVerification("Vui lòng xác thực sinh trắc để đăng nhập VietBank.");
+  const bio = await runBiometricVerification(
+    "Vui lòng xác thực sinh trắc để đăng nhập VietBank."
+  );
   if (!bio.success) {
     throw new Error(bio.message ?? "Xác thực sinh trắc không thành công.");
   }
@@ -367,7 +385,9 @@ export async function loginWithBiometric(): Promise<{
     password = safeB64Decode(stored.passwordB64);
   } catch {
     disableBiometricLogin();
-    throw new Error("Dữ liệu đăng nhập vân tay bị lỗi. Vui lòng đăng nhập mật khẩu lại để bật lại.");
+    throw new Error(
+      "Dữ liệu đăng nhập vân tay bị lỗi. Vui lòng đăng nhập mật khẩu lại để bật lại."
+    );
   }
 
   return loginWithEmail(stored.email, password);
@@ -377,7 +397,8 @@ export async function loginWithBiometric(): Promise<{
 
 function randomAccountNumber(length = 12): string {
   let result = "";
-  for (let i = 0; i < length; i++) result += Math.floor(Math.random() * 10).toString();
+  for (let i = 0; i < length; i++)
+    result += Math.floor(Math.random() * 10).toString();
   return result;
 }
 
@@ -398,12 +419,18 @@ export async function generateNextCif(): Promise<string> {
 
   try {
     const result = await runTransaction(counterRef, (current: unknown) => {
-      if (typeof current !== "number" || !Number.isFinite(current) || current < 0) return 1;
+      if (
+        typeof current !== "number" ||
+        !Number.isFinite(current) ||
+        current < 0
+      )
+        return 1;
       return (current as number) + 1;
     });
 
     let value = result.snapshot.val();
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) value = 1;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+      value = 1;
 
     return `CIF${String(value).padStart(4, "0")}`;
   } catch (error) {
@@ -420,7 +447,8 @@ async function createAuthUserWithoutAffectingSession(
   const appOptions = firebaseAuth.app.options as { apiKey?: string };
   const apiKey = appOptions.apiKey;
 
-  if (!apiKey) throw new Error("Không tìm thấy apiKey của Firebase để tạo user qua REST.");
+  if (!apiKey)
+    throw new Error("Không tìm thấy apiKey của Firebase để tạo user qua REST.");
 
   const res = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
@@ -431,10 +459,16 @@ async function createAuthUserWithoutAffectingSession(
     }
   );
 
-  const data = (await res.json()) as { localId?: string; error?: { message?: string } };
+  const data = (await res.json()) as {
+    localId?: string;
+    error?: { message?: string };
+  };
 
   if (!res.ok || !data.localId) {
-    throw new Error(data.error?.message || "Tạo tài khoản đăng nhập (Auth user) qua REST thất bại.");
+    throw new Error(
+      data.error?.message ||
+        "Tạo tài khoản đăng nhập (Auth user) qua REST thất bại."
+    );
   }
 
   return { uid: data.localId };
@@ -458,15 +492,24 @@ export async function registerCustomerAccount(
   const normalizedEmail = normalizeEmailForQuery(email);
 
   if (options?.createdByOfficer) {
-    const result = await createAuthUserWithoutAffectingSession(normalizedEmail, password);
+    const result = await createAuthUserWithoutAffectingSession(
+      normalizedEmail,
+      password
+    );
     userUid = result.uid;
   } else {
-    const cred = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password).catch(
-      async () => {
-        const newCred = await createUserWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
-        return newCred;
-      }
-    );
+    const cred = await signInWithEmailAndPassword(
+      firebaseAuth,
+      normalizedEmail,
+      password
+    ).catch(async () => {
+      const newCred = await createUserWithEmailAndPassword(
+        firebaseAuth,
+        normalizedEmail,
+        password
+      );
+      return newCred;
+    });
 
     firebaseUser = cred.user;
     userUid = cred.user.uid;
@@ -530,7 +573,9 @@ export async function registerCustomerAccount(
     });
 
     // ✅ init security node
-    await update(ref(firebaseRtdb, `users/${userUid}/security`), { loginFailCount: 0 });
+    await update(ref(firebaseRtdb, `users/${userUid}/security`), {
+      loginFailCount: 0,
+    });
   } catch (error) {
     console.error("Lỗi khi lưu profile/account vào Realtime DB:", error);
   }
@@ -555,7 +600,11 @@ export async function loginWithEmail(
   await assertNotLockedByEmail(normalizedEmail);
 
   try {
-    const cred = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
+    const cred = await signInWithEmailAndPassword(
+      firebaseAuth,
+      normalizedEmail,
+      password
+    );
     const firebaseUser = cred.user;
 
     // ✅ login success -> reset fail count + lưu biometric demo
@@ -579,7 +628,10 @@ export async function loginWithEmail(
           ekycStatus: (raw.ekycStatus as EkycStatus) ?? "PENDING",
           canTransact: (raw.canTransact as boolean) ?? false,
 
-          createdAt: typeof raw.createdAt === "number" ? (raw.createdAt as number) : Date.now(),
+          createdAt:
+            typeof raw.createdAt === "number"
+              ? (raw.createdAt as number)
+              : Date.now(),
 
           phone: (raw.phone as string | null | undefined) ?? null,
           gender: (raw.gender as string | null | undefined) ?? null,
@@ -587,8 +639,10 @@ export async function loginWithEmail(
           nationalId: (raw.nationalId as string | null | undefined) ?? null,
           idIssueDate: (raw.idIssueDate as string | null | undefined) ?? null,
           placeOfIssue: (raw.placeOfIssue as string | null | undefined) ?? null,
-          permanentAddress: (raw.permanentAddress as string | null | undefined) ?? null,
-          contactAddress: (raw.contactAddress as string | null | undefined) ?? null,
+          permanentAddress:
+            (raw.permanentAddress as string | null | undefined) ?? null,
+          contactAddress:
+            (raw.contactAddress as string | null | undefined) ?? null,
           cif: (raw.cif as string | null | undefined) ?? null,
 
           frontIdUrl: (raw.frontIdUrl as string | null | undefined) ?? null,
@@ -603,7 +657,9 @@ export async function loginWithEmail(
     // 3) Nếu DB đã lock (trường hợp lock bởi rule khác) => signOut + chặn
     if (profile && profile.status === "LOCKED") {
       await signOut(firebaseAuth);
-      throw new Error("Tài khoản đã bị tạm khóa. Vui lòng liên hệ nhân viên để mở khóa.");
+      throw new Error(
+        "Tài khoản đã bị tạm khóa. Vui lòng liên hệ nhân viên để mở khóa."
+      );
     }
 
     return { firebaseUser, profile };
@@ -620,9 +676,7 @@ export async function loginWithEmail(
       code === "auth/invalid-login-credentials";
 
     // auth/user-not-found: cũng có thể tăng nếu email tồn tại trong users, nhưng thường không nên lộ
-    const shouldCount =
-      isWrongPassword ||
-      code === "auth/user-not-found";
+    const shouldCount = isWrongPassword || code === "auth/user-not-found";
 
     if (shouldCount) {
       const r = await recordLoginFailureByEmail(normalizedEmail);
@@ -633,7 +687,9 @@ export async function loginWithEmail(
       }
       // nếu failCount=0 (email không tồn tại trong RTDB) -> trả lỗi chung
       if (r.failCount > 0) {
-        throw new Error(`Sai email hoặc mật khẩu. Bạn còn ${r.attemptsLeft} lần thử.`);
+        throw new Error(
+          `Sai email hoặc mật khẩu. Bạn còn ${r.attemptsLeft} lần thử.`
+        );
       }
     }
 

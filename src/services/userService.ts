@@ -98,10 +98,7 @@ export async function verifyTransactionPin(
 
   const now = Date.now();
 
-  if (
-    typeof data?.pinLockedUntil === "number" &&
-    now < data.pinLockedUntil
-  ) {
+  if (typeof data?.pinLockedUntil === "number" && now < data.pinLockedUntil) {
     throw new Error(
       "PIN đang bị khoá tạm thời do nhập sai nhiều lần. Vui lòng thử lại sau."
     );

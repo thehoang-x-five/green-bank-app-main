@@ -60,7 +60,7 @@ export async function sendOtp(email: string, phone: string) {
     TEMPLATE_ID,
     {
       to_email: email, // phải trùng {{to_email}} trong template EmailJS
-      otp_code: otp,   // phải trùng {{otp_code}}
+      otp_code: otp, // phải trùng {{otp_code}}
     },
     PUBLIC_KEY
   );

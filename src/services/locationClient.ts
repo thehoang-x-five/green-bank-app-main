@@ -43,7 +43,9 @@ export async function getVnProvinceOptions(): Promise<CityOption[]> {
   }));
 }
 
-export async function getVnDistrictOptions(provinceCode: string): Promise<CityOption[]> {
+export async function getVnDistrictOptions(
+  provinceCode: string
+): Promise<CityOption[]> {
   const districts = await fetchVnDistricts(provinceCode);
   return districts.map((d: any) => ({
     label: d.name || d.name_en || d.codename || d.code,
@@ -51,7 +53,9 @@ export async function getVnDistrictOptions(provinceCode: string): Promise<CityOp
   }));
 }
 
-export async function getVnWardOptions(districtCode: string): Promise<CityOption[]> {
+export async function getVnWardOptions(
+  districtCode: string
+): Promise<CityOption[]> {
   const wards = await fetchVnWards(districtCode);
   return wards.map((w: any) => ({
     label: w.name || w.name_en || w.codename || w.code,

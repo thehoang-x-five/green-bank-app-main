@@ -62,7 +62,9 @@ function normalizeStatus(raw: unknown): "ACTIVE" | "LOCKED" {
   return raw === "LOCKED" ? "LOCKED" : "ACTIVE";
 }
 
-export async function getPrimaryAccount(uid: string): Promise<BankAccount | null> {
+export async function getPrimaryAccount(
+  uid: string
+): Promise<BankAccount | null> {
   try {
     const q = query(
       ref(firebaseRtdb, "accounts"),
@@ -97,7 +99,9 @@ export async function getPrimaryAccount(uid: string): Promise<BankAccount | null
   }
 }
 
-export async function getCustomerDisplayName(uid: string): Promise<string | null> {
+export async function getCustomerDisplayName(
+  uid: string
+): Promise<string | null> {
   try {
     const snapshot = await get(ref(firebaseRtdb, `users/${uid}`));
     if (!snapshot.exists()) return null;
@@ -120,8 +124,8 @@ async function ensureUserCanTransact(uid: string): Promise<void> {
     typeof extended.ekycStatus === "string"
       ? extended.ekycStatus
       : typeof extended.kycStatus === "string"
-        ? extended.kycStatus
-        : "";
+      ? extended.kycStatus
+      : "";
 
   const normalized = rawStatus.toUpperCase();
   const canTransact = Boolean(extended.canTransact);
@@ -152,7 +156,10 @@ async function createNotificationForUser(
   });
 }
 
-async function lockAccountIfTooManyPinFails(uid: string, accountNumber: string): Promise<void> {
+async function lockAccountIfTooManyPinFails(
+  uid: string,
+  accountNumber: string
+): Promise<void> {
   const profile = await getUserProfile(uid);
   if (!profile) return;
 
@@ -188,7 +195,10 @@ async function getAccountByNumberForOwner(
   }
 }
 
-async function resolveAccount(uid: string, payload: CashOperationPayload): Promise<BankAccount> {
+async function resolveAccount(
+  uid: string,
+  payload: CashOperationPayload
+): Promise<BankAccount> {
   const hint = payload.accountNumber?.trim();
   if (hint) {
     const byNo = await getAccountByNumberForOwner(uid, hint);
@@ -200,7 +210,10 @@ async function resolveAccount(uid: string, payload: CashOperationPayload): Promi
   return primary;
 }
 
-export async function depositToPaymentAccount(uid: string, payload: CashOperationPayload): Promise<void> {
+export async function depositToPaymentAccount(
+  uid: string,
+  payload: CashOperationPayload
+): Promise<void> {
   const amount = Number(payload.amount);
   const pin = payload.pin?.trim();
 
@@ -241,7 +254,10 @@ export async function depositToPaymentAccount(uid: string, payload: CashOperatio
 
   if (!tx.committed) throw new Error("Không thể nạp tiền, vui lòng thử lại.");
 
-  const txListRef = ref(firebaseRtdb, `accountTransactions/${account.accountNumber}`);
+  const txListRef = ref(
+    firebaseRtdb,
+    `accountTransactions/${account.accountNumber}`
+  );
   const newTxRef = push(txListRef);
 
   await set(newTxRef, {
@@ -256,14 +272,19 @@ export async function depositToPaymentAccount(uid: string, payload: CashOperatio
   await createNotificationForUser(uid, {
     type: "CASH_DEPOSIT",
     title: "Nạp tiền thành công",
-    message: `Bạn đã nạp ${amount.toLocaleString("vi-VN")} VND vào tài khoản ${account.accountNumber}.`,
+    message: `Bạn đã nạp ${amount.toLocaleString("vi-VN")} VND vào tài khoản ${
+      account.accountNumber
+    }.`,
   });
 }
 
 /**
  * ✅ FIX: Rút tiền đọc balance thật + transact trực tiếp /balance (tránh đọc sai/stale)
  */
-export async function withdrawFromPaymentAccount(uid: string, payload: CashOperationPayload): Promise<void> {
+export async function withdrawFromPaymentAccount(
+  uid: string,
+  payload: CashOperationPayload
+): Promise<void> {
   const amount = Number(payload.amount);
   const pin = payload.pin?.trim();
 
@@ -288,11 +309,14 @@ export async function withdrawFromPaymentAccount(uid: string, payload: CashOpera
   // ✅ 1) Đọc trực tiếp account node để lấy balance thật từ server
   const accountRef = ref(firebaseRtdb, `accounts/${account.accountNumber}`);
   const accSnap = await get(accountRef);
-  if (!accSnap.exists()) throw new Error("Không tìm thấy tài khoản thanh toán.");
+  if (!accSnap.exists())
+    throw new Error("Không tìm thấy tài khoản thanh toán.");
 
   const accNode = accSnap.val() as AccountNode;
   if (String(accNode.uid ?? "") !== uid) {
-    throw new Error("Không tìm thấy tài khoản thanh toán (không thuộc về bạn).");
+    throw new Error(
+      "Không tìm thấy tài khoản thanh toán (không thuộc về bạn)."
+    );
   }
   if (normalizeStatus(accNode.status) !== "ACTIVE") {
     throw new Error("Tài khoản đang bị khóa, không thể rút tiền.");
@@ -305,7 +329,10 @@ export async function withdrawFromPaymentAccount(uid: string, payload: CashOpera
   }
 
   // ✅ 2) Transaction trực tiếp trên /balance để tránh currentData bị sai shape
-  const balanceRef = ref(firebaseRtdb, `accounts/${account.accountNumber}/balance`);
+  const balanceRef = ref(
+    firebaseRtdb,
+    `accounts/${account.accountNumber}/balance`
+  );
 
   let committed = false;
 
@@ -346,7 +373,10 @@ export async function withdrawFromPaymentAccount(uid: string, payload: CashOpera
   }
 
   // 4) Ghi lịch sử giao dịch
-  const txListRef = ref(firebaseRtdb, `accountTransactions/${account.accountNumber}`);
+  const txListRef = ref(
+    firebaseRtdb,
+    `accountTransactions/${account.accountNumber}`
+  );
   const newTxRef = push(txListRef);
 
   await set(newTxRef, {
@@ -362,6 +392,8 @@ export async function withdrawFromPaymentAccount(uid: string, payload: CashOpera
   await createNotificationForUser(uid, {
     type: "CASH_WITHDRAW",
     title: "Rút tiền thành công",
-    message: `Bạn đã rút ${amount.toLocaleString("vi-VN")} VND từ tài khoản ${account.accountNumber}.`,
+    message: `Bạn đã rút ${amount.toLocaleString("vi-VN")} VND từ tài khoản ${
+      account.accountNumber
+    }.`,
   });
 }

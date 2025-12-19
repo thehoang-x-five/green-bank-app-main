@@ -47,8 +47,15 @@ async function createBalanceChangeNotification(params: {
   accountNumber: string;
   balanceAfter: number;
 }): Promise<void> {
-  const { uid, direction, title, message, amount, accountNumber, balanceAfter } =
-    params;
+  const {
+    uid,
+    direction,
+    title,
+    message,
+    amount,
+    accountNumber,
+    balanceAfter,
+  } = params;
 
   const notiListRef = ref(firebaseRtdb, `notifications/${uid}`);
   const newRef = push(notiListRef);
@@ -308,7 +315,9 @@ const PaymentAccountWithdraw = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Mã PIN giao dịch</label>
+                  <label className="text-sm font-medium">
+                    Mã PIN giao dịch
+                  </label>
                   <input
                     type="password"
                     name="transaction-pin"
