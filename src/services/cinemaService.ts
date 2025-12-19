@@ -1,5 +1,12 @@
 import { fbDb } from "@/lib/firebase";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
 export interface Cinema {
   id: string;
@@ -49,21 +56,30 @@ export interface Seat {
 export async function searchCinemas(cityKey: string): Promise<Cinema[]> {
   try {
     console.log("🔍 [cinemaService] Searching cinemas with cityKey:", cityKey);
-    console.log("🔍 [cinemaService] Firestore instance:", fbDb.app.options.projectId);
-    
+    console.log(
+      "🔍 [cinemaService] Firestore instance:",
+      fbDb.app.options.projectId
+    );
+
     const cinemasRef = collection(fbDb, "cinemas");
     const q = query(cinemasRef, where("cityKey", "==", cityKey));
-    
+
     console.log("🔍 [cinemaService] Executing query...");
     const snapshot = await getDocs(q);
-    
-    console.log("🔍 [cinemaService] Query completed. Found docs:", snapshot.docs.length);
-    
-    const cinemas = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Cinema));
-    
+
+    console.log(
+      "🔍 [cinemaService] Query completed. Found docs:",
+      snapshot.docs.length
+    );
+
+    const cinemas = snapshot.docs.map(
+      (doc) =>
+        ({
+          id: doc.id,
+          ...doc.data(),
+        } as Cinema)
+    );
+
     console.log("🔍 [cinemaService] Returning cinemas:", cinemas);
     return cinemas;
   } catch (error) {
@@ -71,7 +87,7 @@ export async function searchCinemas(cityKey: string): Promise<Cinema[]> {
     console.error("❌ [cinemaService] Error details:", {
       name: (error as Error).name,
       message: (error as Error).message,
-      stack: (error as Error).stack
+      stack: (error as Error).stack,
     });
     throw new Error("Không thể tải danh sách rạp phim");
   }
@@ -86,16 +102,16 @@ export async function getMoviesByCinema(cinemaId: string): Promise<Movie[]> {
     const showtimesRef = collection(fbDb, "showtimes");
     const q = query(showtimesRef, where("cinemaId", "==", cinemaId));
     const snapshot = await getDocs(q);
-    
+
     // Get unique movie IDs
     const movieIds = new Set<string>();
-    snapshot.docs.forEach(doc => {
+    snapshot.docs.forEach((doc) => {
       const data = doc.data();
       if (data.movieId) {
         movieIds.add(data.movieId);
       }
     });
-    
+
     // Fetch movie details
     const movies: Movie[] = [];
     for (const movieId of movieIds) {
@@ -103,11 +119,11 @@ export async function getMoviesByCinema(cinemaId: string): Promise<Movie[]> {
       if (movieDoc.exists()) {
         movies.push({
           id: movieDoc.id,
-          ...movieDoc.data()
+          ...movieDoc.data(),
         } as Movie);
       }
     }
-    
+
     return movies;
   } catch (error) {
     console.error("Error getting movies by cinema:", error);
@@ -130,11 +146,14 @@ export async function getShowtimesByMovie(
       where("movieId", "==", movieId)
     );
     const snapshot = await getDocs(q);
-    
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Showtime));
+
+    return snapshot.docs.map(
+      (doc) =>
+        ({
+          id: doc.id,
+          ...doc.data(),
+        } as Showtime)
+    );
   } catch (error) {
     console.error("Error getting showtimes:", error);
     throw new Error("Không thể tải lịch chiếu");
@@ -147,18 +166,18 @@ export async function getShowtimesByMovie(
 export async function getSeatMap(showtimeId: string): Promise<Seat[]> {
   try {
     const showtimeDoc = await getDoc(doc(fbDb, "showtimes", showtimeId));
-    
+
     if (!showtimeDoc.exists()) {
       throw new Error("Suất chiếu không tồn tại");
     }
-    
+
     const data = showtimeDoc.data() as Showtime;
     const occupiedSeats = new Set(data.occupiedSeats || []);
-    
+
     // Generate 8x12 seat map (rows A-H, seats 1-12)
     const seats: Seat[] = [];
-    const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    
+    const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
     for (const row of rows) {
       for (let num = 1; num <= 12; num++) {
         const seatId = `${row}${num}`;
@@ -166,11 +185,11 @@ export async function getSeatMap(showtimeId: string): Promise<Seat[]> {
           id: seatId,
           row,
           number: num,
-          status: occupiedSeats.has(seatId) ? "occupied" : "available"
+          status: occupiedSeats.has(seatId) ? "occupied" : "available",
         });
       }
     }
-    
+
     return seats;
   } catch (error) {
     console.error("Error getting seat map:", error);
@@ -178,27 +197,29 @@ export async function getSeatMap(showtimeId: string): Promise<Seat[]> {
   }
 }
 
-
 /**
  * Search cinemas by movie name - find which cinemas are showing a specific movie
  */
-export async function searchCinemasByMovie(movieName: string, cityKey?: string): Promise<Cinema[]> {
+export async function searchCinemasByMovie(
+  movieName: string,
+  cityKey?: string
+): Promise<Cinema[]> {
   try {
     // First, find movies matching the name
     const moviesRef = collection(fbDb, "movies");
     const moviesSnapshot = await getDocs(moviesRef);
-    
+
     const matchingMovies = moviesSnapshot.docs
-      .filter(doc => {
+      .filter((doc) => {
         const movie = doc.data() as Movie;
         return movie.title.toLowerCase().includes(movieName.toLowerCase());
       })
-      .map(doc => doc.id);
-    
+      .map((doc) => doc.id);
+
     if (matchingMovies.length === 0) {
       return [];
     }
-    
+
     // Find showtimes for these movies (query per movie to avoid loading entire collection)
     const showtimesRef = collection(fbDb, "showtimes");
     const cinemaIds = new Set<string>();
@@ -215,7 +236,7 @@ export async function searchCinemasByMovie(movieName: string, cityKey?: string):
         });
       })
     );
-    
+
     // Get cinema details
     const cinemas: Cinema[] = [];
     for (const cinemaId of cinemaIds) {
@@ -228,7 +249,7 @@ export async function searchCinemasByMovie(movieName: string, cityKey?: string):
         }
       }
     }
-    
+
     return cinemas;
   } catch (error) {
     console.error("Error searching cinemas by movie:", error);
@@ -243,11 +264,14 @@ export async function getAllMovies(): Promise<Movie[]> {
   try {
     const moviesRef = collection(fbDb, "movies");
     const snapshot = await getDocs(moviesRef);
-    
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Movie));
+
+    return snapshot.docs.map(
+      (doc) =>
+        ({
+          id: doc.id,
+          ...doc.data(),
+        } as Movie)
+    );
   } catch (error) {
     console.error("Error getting all movies:", error);
     throw new Error("Không thể tải danh sách phim");
