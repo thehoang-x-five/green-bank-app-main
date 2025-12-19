@@ -1,10 +1,5 @@
 // src/pages/Login.tsx
-import {
-  useState,
-  useRef,
-  ChangeEvent,
-  FormEvent,
-} from "react";
+import { useState, useRef, ChangeEvent, FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +41,6 @@ import {
   CameraResultType,
   CameraSource,
 } from "@capacitor/camera";
-
 
 type RegisterStep = 1 | 2 | 3;
 
@@ -90,10 +84,10 @@ const Login = () => {
     dob: "",
     nationalId: "",
     idIssueDate: "",
-    idIssuePlace: "",     // nơi cấp CCCD
-    idExpiryDate: "",     // ngày hết hạn CCCD
-    address: "",          // địa chỉ thường trú
-    contactAddress: "",   // địa chỉ liên hệ / tạm trú
+    idIssuePlace: "", // nơi cấp CCCD
+    idExpiryDate: "", // ngày hết hạn CCCD
+    address: "", // địa chỉ thường trú
+    contactAddress: "", // địa chỉ liên hệ / tạm trú
     username: "", // không dùng nữa nhưng giữ để tránh vỡ chỗ khác
     password: "",
     confirmPassword: "",
@@ -126,28 +120,27 @@ const Login = () => {
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
 
   // platform: web / android / ios
-const isNative = Capacitor.isNativePlatform();
+  const isNative = Capacitor.isNativePlatform();
 
-// Loại ảnh eKYC dùng chung
-type EkycImageKind = "frontId" | "backId" | "selfie";
+  // Loại ảnh eKYC dùng chung
+  type EkycImageKind = "frontId" | "backId" | "selfie";
 
-// Chuyển dataURL (base64) từ Camera thành File để reuse uploadEkycImage
-const dataUrlToFile = (dataUrl: string, fileName: string): File => {
-  const [header, base64] = dataUrl.split(",");
-  const mimeMatch = header.match(/data:(.*);base64/);
-  const mimeType = mimeMatch?.[1] ?? "image/jpeg";
+  // Chuyển dataURL (base64) từ Camera thành File để reuse uploadEkycImage
+  const dataUrlToFile = (dataUrl: string, fileName: string): File => {
+    const [header, base64] = dataUrl.split(",");
+    const mimeMatch = header.match(/data:(.*);base64/);
+    const mimeType = mimeMatch?.[1] ?? "image/jpeg";
 
-  const binaryString = window.atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
 
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+    for (let i = 0; i < len; i += 1) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
 
-  return new File([bytes], fileName, { type: mimeType });
-};
-
+    return new File([bytes], fileName, { type: mimeType });
+  };
 
   // --------- Helpers validate ---------
 
@@ -300,87 +293,86 @@ const dataUrlToFile = (dataUrl: string, fileName: string): File => {
   };
 
   // Chụp ảnh eKYC bằng camera (native), fallback input file trên web
-const handleCaptureEkyc = async (kind: EkycImageKind) => {
-  // Web: vẫn dùng input file như cũ
-  if (!isNative) {
-    if (kind === "frontId" && frontIdInputRef.current) {
-      frontIdInputRef.current.click();
-    } else if (kind === "backId" && backIdInputRef.current) {
-      backIdInputRef.current.click();
-    } else if (kind === "selfie" && selfieInputRef.current) {
-      selfieInputRef.current.click();
-    }
-    return;
-  }
-
-  const email = ensureEmailForEkyc();
-  if (!email) return;
-
-  const isSelfie = kind === "selfie";
-
-  try {
-    if (kind === "frontId") setUploadingFront(true);
-    if (kind === "backId") setUploadingBack(true);
-    if (kind === "selfie") setUploadingSelfie(true);
-
-    const photo = await Camera.getPhoto({
-      source: CameraSource.Camera,
-      direction: isSelfie ? CameraDirection.Front : CameraDirection.Rear,
-      resultType: CameraResultType.DataUrl,
-      quality: 70,
-      // các option khác để mặc định cho khỏi lỗi type
-    });
-
-    if (!photo.dataUrl) {
-      toast.error("Không chụp được ảnh. Vui lòng thử lại.");
+  const handleCaptureEkyc = async (kind: EkycImageKind) => {
+    // Web: vẫn dùng input file như cũ
+    if (!isNative) {
+      if (kind === "frontId" && frontIdInputRef.current) {
+        frontIdInputRef.current.click();
+      } else if (kind === "backId" && backIdInputRef.current) {
+        backIdInputRef.current.click();
+      } else if (kind === "selfie" && selfieInputRef.current) {
+        selfieInputRef.current.click();
+      }
       return;
     }
 
-    const fileName = `${kind}-${Date.now()}.jpeg`;
-    const file = dataUrlToFile(photo.dataUrl, fileName);
+    const email = ensureEmailForEkyc();
+    if (!email) return;
 
-    const url = await uploadEkycImage(email, kind, file);
+    const isSelfie = kind === "selfie";
 
-    setRegisterData((prev) => {
+    try {
+      if (kind === "frontId") setUploadingFront(true);
+      if (kind === "backId") setUploadingBack(true);
+      if (kind === "selfie") setUploadingSelfie(true);
+
+      const photo = await Camera.getPhoto({
+        source: CameraSource.Camera,
+        direction: isSelfie ? CameraDirection.Front : CameraDirection.Rear,
+        resultType: CameraResultType.DataUrl,
+        quality: 70,
+        // các option khác để mặc định cho khỏi lỗi type
+      });
+
+      if (!photo.dataUrl) {
+        toast.error("Không chụp được ảnh. Vui lòng thử lại.");
+        return;
+      }
+
+      const fileName = `${kind}-${Date.now()}.jpeg`;
+      const file = dataUrlToFile(photo.dataUrl, fileName);
+
+      const url = await uploadEkycImage(email, kind, file);
+
+      setRegisterData((prev) => {
+        if (kind === "frontId") {
+          return {
+            ...prev,
+            frontId: "Đã tải CCCD mặt trước",
+            frontIdUrl: url,
+          };
+        }
+        if (kind === "backId") {
+          return {
+            ...prev,
+            backId: "Đã tải CCCD mặt sau",
+            backIdUrl: url,
+          };
+        }
+        // selfie
+        return {
+          ...prev,
+          selfieStatus: "Đã tải ảnh khuôn mặt",
+          selfieUrl: url,
+        };
+      });
+
       if (kind === "frontId") {
-        return {
-          ...prev,
-          frontId: "Đã tải CCCD mặt trước",
-          frontIdUrl: url,
-        };
+        toast.success("Chụp CCCD mặt trước thành công");
+      } else if (kind === "backId") {
+        toast.success("Chụp CCCD mặt sau thành công");
+      } else {
+        toast.success("Chụp ảnh khuôn mặt thành công");
       }
-      if (kind === "backId") {
-        return {
-          ...prev,
-          backId: "Đã tải CCCD mặt sau",
-          backIdUrl: url,
-        };
-      }
-      // selfie
-      return {
-        ...prev,
-        selfieStatus: "Đã tải ảnh khuôn mặt",
-        selfieUrl: url,
-      };
-    });
-
-    if (kind === "frontId") {
-      toast.success("Chụp CCCD mặt trước thành công");
-    } else if (kind === "backId") {
-      toast.success("Chụp CCCD mặt sau thành công");
-    } else {
-      toast.success("Chụp ảnh khuôn mặt thành công");
+    } catch (error) {
+      console.error("Capture eKYC error:", error);
+      toast.error("Không thể chụp ảnh. Vui lòng thử lại.");
+    } finally {
+      if (kind === "frontId") setUploadingFront(false);
+      if (kind === "backId") setUploadingBack(false);
+      if (kind === "selfie") setUploadingSelfie(false);
     }
-  } catch (error) {
-    console.error("Capture eKYC error:", error);
-    toast.error("Không thể chụp ảnh. Vui lòng thử lại.");
-  } finally {
-    if (kind === "frontId") setUploadingFront(false);
-    if (kind === "backId") setUploadingBack(false);
-    if (kind === "selfie") setUploadingSelfie(false);
-  }
-};
-
+  };
 
   // --------- Login (Firebase) ---------
   const handleLogin = async (e: FormEvent) => {
@@ -397,7 +389,6 @@ const handleCaptureEkyc = async (kind: EkycImageKind) => {
     try {
       const { profile } = await loginWithEmail(email, loginData.password);
       localStorage.setItem("vietbank_bio_enabled", "1"); // optional nhưng giờ authService đã set rồi
-
 
       // Role lấy từ profile (nếu chưa có thì coi như CUSTOMER)
       const role = profile?.role ?? "CUSTOMER";
@@ -437,27 +428,25 @@ const handleCaptureEkyc = async (kind: EkycImageKind) => {
   };
 
   const handleBiometricLogin = async (): Promise<void> => {
-  try {
-    const { profile } = await loginWithBiometric();
+    try {
+      const { profile } = await loginWithBiometric();
 
-    const role = profile?.role ?? "CUSTOMER";
+      const role = profile?.role ?? "CUSTOMER";
 
-    toast.success(
-      role === "OFFICER"
-        ? "Đăng nhập vân tay (nhân viên) thành công"
-        : "Đăng nhập vân tay (khách hàng) thành công"
-    );
+      toast.success(
+        role === "OFFICER"
+          ? "Đăng nhập vân tay (nhân viên) thành công"
+          : "Đăng nhập vân tay (khách hàng) thành công"
+      );
 
-    navigate(role === "OFFICER" ? "/officer" : "/home");
-  } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Có lỗi khi đăng nhập vân tay.";
-    toast.error(message);
-    console.error("[handleBiometricLogin]", err);
-  }
-};
-
-
+      navigate(role === "OFFICER" ? "/officer" : "/home");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Có lỗi khi đăng nhập vân tay.";
+      toast.error(message);
+      console.error("[handleBiometricLogin]", err);
+    }
+  };
 
   const handleForgotPassword = async () => {
     const trimmedUsername = loginData.username.trim();
@@ -532,9 +521,7 @@ const handleCaptureEkyc = async (kind: EkycImageKind) => {
   };
 
   // --------- Upload ảnh eKYC ---------
-  const handleFrontIdFileChange = async (
-    e: ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleFrontIdFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -692,9 +679,7 @@ const handleCaptureEkyc = async (kind: EkycImageKind) => {
       }
 
       // ✅ CCCD phải là số, đủ 12 số
-      const nationalIdErr = validateNationalId(
-        registerData.nationalId.trim()
-      );
+      const nationalIdErr = validateNationalId(registerData.nationalId.trim());
       if (nationalIdErr) {
         toast.error(nationalIdErr);
         return;
@@ -736,52 +721,52 @@ const handleCaptureEkyc = async (kind: EkycImageKind) => {
       // Email dùng để tạo tài khoản đăng nhập chính là email Bước 1
       const normalizedEmail = normalizeEmail(registerData.email);
 
-try {
-  // ✅ 1) Đăng ký tài khoản trước để chắc chắn có UID trong users/{uid}
-  const result = await registerCustomerAccount(
-    normalizedEmail,
-    registerData.password,
-    registerData.fullName.trim(), // dùng HỌ TÊN làm tên hiển thị
-    pinTrimmed,
-    {
-      phone: registerData.phone.trim(),
-      gender: registerData.gender,
-      dob: registerData.dob.trim(),
-      nationalId: registerData.nationalId.trim(),
-      idIssueDate: registerData.idIssueDate.trim(),
+      try {
+        // ✅ 1) Đăng ký tài khoản trước để chắc chắn có UID trong users/{uid}
+        const result = await registerCustomerAccount(
+          normalizedEmail,
+          registerData.password,
+          registerData.fullName.trim(), // dùng HỌ TÊN làm tên hiển thị
+          pinTrimmed,
+          {
+            phone: registerData.phone.trim(),
+            gender: registerData.gender,
+            dob: registerData.dob.trim(),
+            nationalId: registerData.nationalId.trim(),
+            idIssueDate: registerData.idIssueDate.trim(),
 
-      // map đúng tên field trong AppUserProfile
-      placeOfIssue: registerData.idIssuePlace.trim(),        // nơi cấp CCCD
-      permanentAddress: registerData.address.trim(),         // địa chỉ thường trú
-      contactAddress: registerData.contactAddress.trim(),    // địa chỉ liên hệ / tạm trú
+            // map đúng tên field trong AppUserProfile
+            placeOfIssue: registerData.idIssuePlace.trim(), // nơi cấp CCCD
+            permanentAddress: registerData.address.trim(), // địa chỉ thường trú
+            contactAddress: registerData.contactAddress.trim(), // địa chỉ liên hệ / tạm trú
 
-      // lưu luôn url ảnh eKYC vào profile
-      frontIdUrl: registerData.frontIdUrl || null,
-      backIdUrl: registerData.backIdUrl || null,
-      selfieUrl: registerData.selfieUrl || null,
-    },
-    {
-      // nếu đi từ màn nhân viên thì tạo user mà KHÔNG đổi session
-      createdByOfficer: sourceParam === "officer",
-    }
-  );
+            // lưu luôn url ảnh eKYC vào profile
+            frontIdUrl: registerData.frontIdUrl || null,
+            backIdUrl: registerData.backIdUrl || null,
+            selfieUrl: registerData.selfieUrl || null,
+          },
+          {
+            // nếu đi từ màn nhân viên thì tạo user mà KHÔNG đổi session
+            createdByOfficer: sourceParam === "officer",
+          }
+        );
 
-  // ✅ 2) Sau khi đã có UID → lưu session eKYC + submittedAt + đồng bộ users/{uid}/ekycSubmittedAt
-  await saveEkycInfoByUid(result.profile.uid, normalizedEmail, {
-    fullName: registerData.fullName.trim(),
-    dob: registerData.dob.trim(),
-    nationalId: registerData.nationalId.trim(),
-    address: registerData.address.trim(),
-    gender: registerData.gender,
-    idIssueDate: registerData.idIssueDate.trim(),
-  });
-
-        
+        // ✅ 2) Sau khi đã có UID → lưu session eKYC + submittedAt + đồng bộ users/{uid}/ekycSubmittedAt
+        await saveEkycInfoByUid(result.profile.uid, normalizedEmail, {
+          fullName: registerData.fullName.trim(),
+          dob: registerData.dob.trim(),
+          nationalId: registerData.nationalId.trim(),
+          address: registerData.address.trim(),
+          gender: registerData.gender,
+          idIssueDate: registerData.idIssueDate.trim(),
+        });
 
         if (sourceParam === "officer") {
           // FLOW NHÂN VIÊN TẠO KHÁCH MỚI
           toast.success(
-            `Đã tạo tài khoản cho khách hàng ${registerData.fullName.trim()}. Số tài khoản thanh toán: ${result.accountNumber}.`
+            `Đã tạo tài khoản cho khách hàng ${registerData.fullName.trim()}. Số tài khoản thanh toán: ${
+              result.accountNumber
+            }.`
           );
 
           // reset flow đăng ký cho sạch form
@@ -801,39 +786,38 @@ try {
           setAuthTab("login");
           setLoginData({ username: emailForLogin, password: "" });
         }
-
       } catch (error: unknown) {
-          console.error("Firebase login error:", error);
+        console.error("Firebase login error:", error);
 
-          // ✅ Ưu tiên message custom từ authService (đếm lần còn lại / khóa tài khoản)
-          const serviceMessage =
-            error instanceof Error && error.message ? error.message.trim() : "";
+        // ✅ Ưu tiên message custom từ authService (đếm lần còn lại / khóa tài khoản)
+        const serviceMessage =
+          error instanceof Error && error.message ? error.message.trim() : "";
 
-          if (serviceMessage) {
-            toast.error(serviceMessage);
-            return;
-          }
-
-          // fallback: nếu không có message custom thì mới map theo Firebase code
-          const code = getFirebaseErrorCode(error);
-
-          let message =
-            "Đăng nhập thất bại. Vui lòng kiểm tra lại email và mật khẩu.";
-
-          if (
-            code === "auth/invalid-credential" ||
-            code === "auth/wrong-password"
-          ) {
-            message = "Email hoặc mật khẩu không đúng.";
-          } else if (code === "auth/user-not-found") {
-            message = "Tài khoản không tồn tại.";
-          } else if (code === "auth/too-many-requests") {
-            message = "Bạn đã đăng nhập sai nhiều lần. Vui lòng thử lại sau ít phút.";
-          }
-
-          toast.error(message);
+        if (serviceMessage) {
+          toast.error(serviceMessage);
+          return;
         }
 
+        // fallback: nếu không có message custom thì mới map theo Firebase code
+        const code = getFirebaseErrorCode(error);
+
+        let message =
+          "Đăng nhập thất bại. Vui lòng kiểm tra lại email và mật khẩu.";
+
+        if (
+          code === "auth/invalid-credential" ||
+          code === "auth/wrong-password"
+        ) {
+          message = "Email hoặc mật khẩu không đúng.";
+        } else if (code === "auth/user-not-found") {
+          message = "Tài khoản không tồn tại.";
+        } else if (code === "auth/too-many-requests") {
+          message =
+            "Bạn đã đăng nhập sai nhiều lần. Vui lòng thử lại sau ít phút.";
+        }
+
+        toast.error(message);
+      }
     }
   };
 
