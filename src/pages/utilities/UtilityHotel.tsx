@@ -168,7 +168,10 @@ export default function UtilityHotel({
             </p>
             <p className="text-sm text-foreground">{dateSummary}</p>
           </div>
-          <Badge variant="secondary" className="border-emerald-100 text-emerald-700">
+          <Badge
+            variant="secondary"
+            className="border-emerald-100 text-emerald-700"
+          >
             <CalendarRange size={14} className="mr-1" />
             {nights > 0 ? `${nights} đêm` : "Chưa chọn"}
           </Badge>
@@ -180,7 +183,10 @@ export default function UtilityHotel({
               type="date"
               value={formData.hotelCheckIn}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, hotelCheckIn: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  hotelCheckIn: e.target.value,
+                }))
               }
               className="border-0 px-0 shadow-none focus-visible:ring-0"
             />
@@ -191,14 +197,20 @@ export default function UtilityHotel({
               type="date"
               value={formData.hotelCheckOut}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, hotelCheckOut: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  hotelCheckOut: e.target.value,
+                }))
               }
               className="border-0 px-0 shadow-none focus-visible:ring-0"
             />
           </div>
         </div>
-        {(fieldError(formData.hotelCheckIn) || fieldError(formData.hotelCheckOut)) && (
-          <p className="text-xs text-destructive">Chọn đủ ngày nhận và trả phòng.</p>
+        {(fieldError(formData.hotelCheckIn) ||
+          fieldError(formData.hotelCheckOut)) && (
+          <p className="text-xs text-destructive">
+            Chọn đủ ngày nhận và trả phòng.
+          </p>
         )}
       </section>
 
@@ -217,8 +229,12 @@ export default function UtilityHotel({
                   <UsersRound size={18} />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-foreground">{guestSummary}</p>
-                  <p className="text-xs text-muted-foreground">Chạm để chỉnh nhanh</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {guestSummary}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Chạm để chỉnh nhanh
+                  </p>
                 </div>
               </div>
               <ChevronRight size={18} className="text-muted-foreground" />
@@ -233,14 +249,36 @@ export default function UtilityHotel({
             </DialogHeader>
             <div className="space-y-4">
               {[
-                { label: "Người lớn", value: adults, type: "adults" as const, helper: "Từ 12 tuổi" },
-                { label: "Trẻ em", value: children, type: "children" as const, helper: "0 - 11 tuổi" },
-                { label: "Số phòng", value: rooms, type: "rooms" as const, helper: "Tối đa 5 phòng" },
+                {
+                  label: "Người lớn",
+                  value: adults,
+                  type: "adults" as const,
+                  helper: "Từ 12 tuổi",
+                },
+                {
+                  label: "Trẻ em",
+                  value: children,
+                  type: "children" as const,
+                  helper: "0 - 11 tuổi",
+                },
+                {
+                  label: "Số phòng",
+                  value: rooms,
+                  type: "rooms" as const,
+                  helper: "Tối đa 5 phòng",
+                },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between rounded-xl border px-4 py-3">
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-xl border px-4 py-3"
+                >
                   <div>
-                    <p className="text-sm font-semibold text-foreground">{item.label}</p>
-                    <p className="text-xs text-muted-foreground">{item.helper}</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {item.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.helper}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -249,7 +287,11 @@ export default function UtilityHotel({
                       size="icon"
                       className="h-9 w-9 rounded-full"
                       onClick={() => adjustCount(item.type, -1)}
-                      disabled={item.type === "adults" ? item.value <= 1 : item.value <= 0}
+                      disabled={
+                        item.type === "adults"
+                          ? item.value <= 1
+                          : item.value <= 0
+                      }
                     >
                       <Minus size={16} />
                     </Button>
@@ -315,7 +357,10 @@ export default function UtilityHotel({
               {formData.hotelCity || "Chưa chọn điểm đến"}
             </p>
           </div>
-          <Badge variant="secondary" className="border-emerald-100 text-emerald-700">
+          <Badge
+            variant="secondary"
+            className="border-emerald-100 text-emerald-700"
+          >
             Ước tính: {estimatedPrice} đ
           </Badge>
         </div>
@@ -323,7 +368,9 @@ export default function UtilityHotel({
         <div className="space-y-2 text-sm text-muted-foreground">
           <p>Ngày: {dateSummary}</p>
           <p>Khách & phòng: {guestSummary}</p>
-          <p>Bộ lọc: {filters.length > 0 ? filters.join(", ") : "Chưa áp dụng"}</p>
+          <p>
+            Bộ lọc: {filters.length > 0 ? filters.join(", ") : "Chưa áp dụng"}
+          </p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Skeleton className="h-2 rounded-full" />

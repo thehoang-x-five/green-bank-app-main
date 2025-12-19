@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { reverseGeocode } from "@/services/geocodeService";
@@ -71,9 +75,12 @@ const HOTEL_IMAGE_KEYWORDS = [
 
 function getHotelImages(hotelId: string, count: number = 5): string[] {
   // Use hotel ID as seed for consistent images per hotel
-  const seed = hotelId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const seed = hotelId
+    .split("")
+    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return Array.from({ length: count }, (_, i) => {
-    const keyword = HOTEL_IMAGE_KEYWORDS[(seed + i) % HOTEL_IMAGE_KEYWORDS.length];
+    const keyword =
+      HOTEL_IMAGE_KEYWORDS[(seed + i) % HOTEL_IMAGE_KEYWORDS.length];
     // Using picsum.photos for reliable free images
     return `https://picsum.photos/seed/${hotelId}-${i}/800/600`;
   });
@@ -106,7 +113,11 @@ export default function HotelBooking() {
   const [checkOut, setCheckOut] = useState(tomorrow);
   const [guests, setGuests] = useState(2);
   const [rooms, setRooms] = useState(1);
-  const [filters, setFilters] = useState({ nearCenter: true, starsGte4: true, cheapFirst: true });
+  const [filters, setFilters] = useState({
+    nearCenter: true,
+    starsGte4: true,
+    cheapFirst: true,
+  });
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
@@ -129,7 +140,9 @@ export default function HotelBooking() {
   const [intlComboboxOpen, setIntlComboboxOpen] = useState(false);
 
   useEffect(() => {
-    getVnProvinceOptions().then(setVnProvinces).catch(() => setVnProvinces([]));
+    getVnProvinceOptions()
+      .then(setVnProvinces)
+      .catch(() => setVnProvinces([]));
     fetchUserAccounts()
       .then((list) => {
         setAccounts(list);
@@ -157,48 +170,53 @@ export default function HotelBooking() {
       if (selectedProvince) {
         // Map province codes to hotel cityKeys
         const provinceToHotelKey: Record<string, string> = {
-          "1": "VN_HN",    // Hà Nội
-          "01": "VN_HN",   // Hà Nội (with leading zero)
-          "79": "VN_HCM",  // TP.HCM
-          "48": "VN_DN",   // Đà Nẵng
-          "56": "VN_NT",   // Khánh Hòa (Nha Trang)
-          "91": "VN_PQ",   // Kiên Giang (Phú Quốc)
-          "49": "VN_HA",   // Quảng Nam (Hội An)
-          "77": "VN_VT",   // Bà Rịa-Vũng Tàu
-          "68": "VN_DL",   // Lâm Đồng (Đà Lạt)
-          "92": "VN_CT",   // Cần Thơ
-          "31": "VN_HP",   // Hải Phòng
+          "1": "VN_HN", // Hà Nội
+          "01": "VN_HN", // Hà Nội (with leading zero)
+          "79": "VN_HCM", // TP.HCM
+          "48": "VN_DN", // Đà Nẵng
+          "56": "VN_NT", // Khánh Hòa (Nha Trang)
+          "91": "VN_PQ", // Kiên Giang (Phú Quốc)
+          "49": "VN_HA", // Quảng Nam (Hội An)
+          "77": "VN_VT", // Bà Rịa-Vũng Tàu
+          "68": "VN_DL", // Lâm Đồng (Đà Lạt)
+          "92": "VN_CT", // Cần Thơ
+          "31": "VN_HP", // Hải Phòng
         };
-        
+
         const hotelKey = provinceToHotelKey[selectedProvince];
         if (hotelKey) return hotelKey;
-        
+
         // Fallback to VN_<code> if not mapped
         return `VN_${selectedProvince}`;
       }
-      
+
       // Fallback to cityKey if already set
       if (cityKey) return cityKey;
     }
-    
+
     // For international or fallback
     if (cityKey) return cityKey;
     const normalized = cityInput.trim().toLowerCase();
     if (CITY_KEY_MAP[normalized]) return CITY_KEY_MAP[normalized];
-    return cityInput ? `INT_${cityInput.replace(/\s+/g, "_").toUpperCase()}` : "";
+    return cityInput
+      ? `INT_${cityInput.replace(/\s+/g, "_").toUpperCase()}`
+      : "";
   };
 
   const handleGeoSuggest = async () => {
     try {
       setLoadingGeo(true);
-      
+
       let lat: number, lon: number;
-      
+
       // Try Capacitor Geolocation first (mobile)
       try {
         const perm = await Geolocation.requestPermissions();
-        if (perm?.location === "denied") throw new Error("Quyền vị trí bị từ chối");
-        const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+        if (perm?.location === "denied")
+          throw new Error("Quyền vị trí bị từ chối");
+        const pos = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+        });
         lat = pos.coords.latitude;
         lon = pos.coords.longitude;
       } catch (capacitorErr) {
@@ -206,56 +224,62 @@ export default function HotelBooking() {
         if (!navigator.geolocation) {
           throw new Error("Trình duyệt không hỗ trợ GPS");
         }
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
-        });
+        const pos = await new Promise<GeolocationPosition>(
+          (resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+            });
+          }
+        );
         lat = pos.coords.latitude;
         lon = pos.coords.longitude;
       }
-      
+
       // Reverse geocode to get location info
       const result = await reverseGeocode(lat, lon);
       const country = result.country || "";
-      const isVietnam = country.toLowerCase().includes("vietnam") || country.toLowerCase().includes("việt nam");
-      
+      const isVietnam =
+        country.toLowerCase().includes("vietnam") ||
+        country.toLowerCase().includes("việt nam");
+
       if (isVietnam) {
         // Vietnam - set province/city and district
         setLocationMode("vn");
-        
+
         const cityName = result.city || "";
         const districtName = result.district || "";
-        
+
         // First, try to match with province
         const provinceName = result.state || cityName || "";
         const matchedProvince = vnProvinces.find(
-          (p) => 
-            p.label.toLowerCase().includes(provinceName.toLowerCase()) || 
+          (p) =>
+            p.label.toLowerCase().includes(provinceName.toLowerCase()) ||
             provinceName.toLowerCase().includes(p.label.toLowerCase())
         );
-        
+
         if (matchedProvince) {
           setSelectedProvince(matchedProvince.key);
-          
+
           // Load districts and try to match
           try {
             const districts = await getVnDistrictOptions(matchedProvince.key);
             setVnDistricts(districts);
-            
+
             // Try to match district with multiple fields
             // cityName might be the district (e.g., "Thủ Đức", "Quận 7")
             // districtName might have the district info
             const searchTerms = [cityName, districtName].filter(Boolean);
             let matchedDistrict = null;
-            
+
             for (const term of searchTerms) {
               matchedDistrict = districts.find(
-                (d) => 
-                  d.label.toLowerCase().includes(term.toLowerCase()) || 
+                (d) =>
+                  d.label.toLowerCase().includes(term.toLowerCase()) ||
                   term.toLowerCase().includes(d.label.toLowerCase())
               );
               if (matchedDistrict) break;
             }
-            
+
             if (matchedDistrict) {
               setSelectedDistrict(matchedDistrict.key);
               setCityInput(matchedDistrict.label);
@@ -273,20 +297,20 @@ export default function HotelBooking() {
         } else {
           // No province match - try to find district by checking major cities
           // Check HCM and Hanoi first (most common)
-          const majorCities = vnProvinces.filter(p => 
-            p.key === "SG" || p.key === "HN" || p.key === "DN"
+          const majorCities = vnProvinces.filter(
+            (p) => p.key === "SG" || p.key === "HN" || p.key === "DN"
           );
-          
+
           let foundMatch = false;
           for (const province of majorCities) {
             try {
               const districts = await getVnDistrictOptions(province.key);
               const matchedDistrict = districts.find(
-                (d) => 
-                  d.label.toLowerCase().includes(cityName.toLowerCase()) || 
+                (d) =>
+                  d.label.toLowerCase().includes(cityName.toLowerCase()) ||
                   cityName.toLowerCase().includes(d.label.toLowerCase())
               );
-              
+
               if (matchedDistrict) {
                 setSelectedProvince(province.key);
                 setVnDistricts(districts);
@@ -300,7 +324,7 @@ export default function HotelBooking() {
               continue;
             }
           }
-          
+
           if (!foundMatch) {
             // Default to Hanoi
             setCityInput("Hà Nội");
@@ -311,23 +335,29 @@ export default function HotelBooking() {
         // International
         setLocationMode("intl");
         const city = result.city || result.state || country;
-        
+
         // Try to match with international destinations
         const matchedDest = intlDestinations.find(
-          (d) => d.label.toLowerCase().includes(city.toLowerCase()) || city.toLowerCase().includes(d.label.toLowerCase())
+          (d) =>
+            d.label.toLowerCase().includes(city.toLowerCase()) ||
+            city.toLowerCase().includes(d.label.toLowerCase())
         );
-        
+
         if (matchedDest) {
           setCityInput(matchedDest.label);
           setCityKey(matchedDest.key);
         } else {
           // Use city name as-is
           setCityInput(city);
-          setCityKey(city ? `INT_${city.replace(/\s+/g, "_").toUpperCase()}` : "");
+          setCityKey(
+            city ? `INT_${city.replace(/\s+/g, "_").toUpperCase()}` : ""
+          );
         }
       }
-      
-      toast.success(`Đã phát hiện vị trí: ${result.displayName || "Không xác định"}`);
+
+      toast.success(
+        `Đã phát hiện vị trí: ${result.displayName || "Không xác định"}`
+      );
     } catch (err) {
       console.error(err);
       toast.error("Không thể lấy vị trí GPS. Vui lòng chọn thủ công.");
@@ -407,8 +437,11 @@ export default function HotelBooking() {
     const total = totalPrice;
     if (total >= 10_000_000) {
       const biometric = await requireBiometricForHighValueVnd(total);
-      if (biometric !== "ok") {
-        toast.error("Cần xác thực vân tay/FaceID cho giao dịch >= 10 triệu");
+      if (biometric.code !== "ok") {
+        toast.error(
+          biometric.message ||
+            "Cần xác thực vân tay/FaceID cho giao dịch >= 10 triệu"
+        );
         return;
       }
     }
@@ -450,7 +483,8 @@ export default function HotelBooking() {
       });
     } catch (err: unknown) {
       console.error(err);
-      const errorMessage = err instanceof Error ? err.message : "Thanh toán thất bại";
+      const errorMessage =
+        err instanceof Error ? err.message : "Thanh toán thất bại";
       toast.error(errorMessage);
     }
   };
@@ -468,11 +502,15 @@ export default function HotelBooking() {
               <ArrowLeft size={18} />
             </button>
             <div className="leading-tight">
-              <p className="text-xs opacity-80">Tiện ích – Du lịch & nghỉ dưỡng</p>
+              <p className="text-xs opacity-80">
+                Tiện ích – Du lịch & nghỉ dưỡng
+              </p>
               <h1 className="text-xl font-semibold">Đặt phòng khách sạn</h1>
             </div>
           </div>
-          <Badge className="bg-white/20 text-primary-foreground border-white/40">Beta</Badge>
+          <Badge className="bg-white/20 text-primary-foreground border-white/40">
+            Beta
+          </Badge>
         </div>
       </header>
 
@@ -484,7 +522,9 @@ export default function HotelBooking() {
                 <p className="text-xs opacity-80">BƯỚC {step} / 3</p>
                 <h2 className="text-lg font-semibold">Quy trình đặt phòng</h2>
               </div>
-              <Badge className="border-white/40 bg-white/15 text-primary-foreground">An toàn</Badge>
+              <Badge className="border-white/40 bg-white/15 text-primary-foreground">
+                An toàn
+              </Badge>
             </div>
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center  md:justify-center md:gap-4">
               {[
@@ -492,19 +532,28 @@ export default function HotelBooking() {
                 { label: "Chọn phòng", icon: BedDouble, id: 2 },
                 { label: "Thanh toán", icon: CreditCard, id: 3 },
               ].map((item, idx) => (
-                <div key={item.label} className="flex flex-1 items-center gap-3">
+                <div
+                  key={item.label}
+                  className="flex flex-1 items-center gap-3"
+                >
                   <div
                     className={`flex h-10 w-10 items-center justify-center rounded-full border text-primary-foreground shadow-sm ${
-                      step >= item.id ? "border-white bg-white/90 text-primary" : "border-white/60 bg-white/20"
+                      step >= item.id
+                        ? "border-white bg-white/90 text-primary"
+                        : "border-white/60 bg-white/20"
                     }`}
                   >
                     <item.icon size={16} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-primary-foreground/80">Bước {idx + 1}</p>
+                    <p className="text-xs text-primary-foreground/80">
+                      Bước {idx + 1}
+                    </p>
                     <p
                       className={`text-sm font-semibold ${
-                        step >= item.id ? "text-primary-foreground" : "text-primary-foreground/70"
+                        step >= item.id
+                          ? "text-primary-foreground"
+                          : "text-primary-foreground/70"
                       }`}
                     >
                       {item.label}
@@ -552,7 +601,11 @@ export default function HotelBooking() {
                     Quốc tế
                   </Button>
                 </div>
-                <Button variant="outline" onClick={handleGeoSuggest} disabled={loadingGeo}>
+                <Button
+                  variant="outline"
+                  onClick={handleGeoSuggest}
+                  disabled={loadingGeo}
+                >
                   <LocateFixed size={16} className="mr-2" />
                   {loadingGeo ? "Đang lấy vị trí..." : "Gợi ý GPS"}
                 </Button>
@@ -566,7 +619,9 @@ export default function HotelBooking() {
                   </p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="grid gap-1">
-                      <Label className="text-xs text-muted-foreground">Tỉnh/Thành phố</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        Tỉnh/Thành phố
+                      </Label>
                       <select
                         className="w-full rounded-xl border bg-background p-3 text-sm"
                         value={selectedProvince}
@@ -575,7 +630,9 @@ export default function HotelBooking() {
                           setSelectedProvince(code);
                           setSelectedDistrict("");
                           if (code) {
-                            const provinceLabel = vnProvinces.find((p) => p.key === code)?.label || "";
+                            const provinceLabel =
+                              vnProvinces.find((p) => p.key === code)?.label ||
+                              "";
                             setCityInput(provinceLabel);
                             setCityKey(`VN_${code}`);
                             const districts = await getVnDistrictOptions(code);
@@ -596,7 +653,9 @@ export default function HotelBooking() {
                       </select>
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-xs text-muted-foreground">Quận/Huyện (tùy chọn)</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        Quận/Huyện (tùy chọn)
+                      </Label>
                       <select
                         className="w-full rounded-xl border bg-background p-3 text-sm"
                         value={selectedDistrict}
@@ -604,12 +663,17 @@ export default function HotelBooking() {
                           const code = e.target.value;
                           setSelectedDistrict(code);
                           if (code) {
-                            const distLabel = vnDistricts.find((d) => d.key === code)?.label || "";
+                            const distLabel =
+                              vnDistricts.find((d) => d.key === code)?.label ||
+                              "";
                             setCityInput(distLabel);
                             setCityKey(`VN_${code}`);
                           } else if (selectedProvince) {
                             // If district is cleared but province is selected, use province
-                            const provinceLabel = vnProvinces.find((p) => p.key === selectedProvince)?.label || "";
+                            const provinceLabel =
+                              vnProvinces.find(
+                                (p) => p.key === selectedProvince
+                              )?.label || "";
                             setCityInput(provinceLabel);
                             setCityKey(`VN_${selectedProvince}`);
                           }
@@ -635,8 +699,13 @@ export default function HotelBooking() {
                     Chọn địa điểm quốc tế
                   </p>
                   <div className="grid gap-1">
-                    <Label className="text-xs text-muted-foreground">Điểm đến phổ biến</Label>
-                    <Popover open={intlComboboxOpen} onOpenChange={setIntlComboboxOpen}>
+                    <Label className="text-xs text-muted-foreground">
+                      Điểm đến phổ biến
+                    </Label>
+                    <Popover
+                      open={intlComboboxOpen}
+                      onOpenChange={setIntlComboboxOpen}
+                    >
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -645,12 +714,16 @@ export default function HotelBooking() {
                           className="w-full justify-between rounded-xl border bg-background p-3 text-sm font-normal h-auto"
                         >
                           {cityKey
-                            ? intlDestinations.find((c) => c.key === cityKey)?.label || cityInput
+                            ? intlDestinations.find((c) => c.key === cityKey)
+                                ?.label || cityInput
                             : "Chọn điểm đến..."}
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <PopoverContent
+                        className="w-[--radix-popover-trigger-width] p-0"
+                        align="start"
+                      >
                         <Command>
                           <CommandInput placeholder="Tìm điểm đến..." />
                           <CommandList>
@@ -669,7 +742,9 @@ export default function HotelBooking() {
                                   <Check
                                     className={cn(
                                       "mr-2 h-4 w-4",
-                                      cityKey === opt.key ? "opacity-100" : "opacity-0"
+                                      cityKey === opt.key
+                                        ? "opacity-100"
+                                        : "opacity-0"
                                     )}
                                   />
                                   {opt.label}
@@ -692,15 +767,29 @@ export default function HotelBooking() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Nhận phòng</Label>
-                      <Input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
+                      <Label className="text-xs text-muted-foreground">
+                        Nhận phòng
+                      </Label>
+                      <Input
+                        type="date"
+                        value={checkIn}
+                        onChange={(e) => setCheckIn(e.target.value)}
+                      />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Trả phòng</Label>
-                      <Input type="date" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
+                      <Label className="text-xs text-muted-foreground">
+                        Trả phòng
+                      </Label>
+                      <Input
+                        type="date"
+                        value={checkOut}
+                        onChange={(e) => setCheckOut(e.target.value)}
+                      />
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{nights || 1} đêm</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {nights || 1} đêm
+                  </p>
                 </div>
                 <div className="rounded-2xl border p-4">
                   <div className="flex items-center gap-2 text-sm font-semibold">
@@ -709,21 +798,29 @@ export default function HotelBooking() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Khách</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        Khách
+                      </Label>
                       <Input
                         type="number"
                         min={1}
                         value={guests}
-                        onChange={(e) => setGuests(Math.max(1, Number(e.target.value) || 1))}
+                        onChange={(e) =>
+                          setGuests(Math.max(1, Number(e.target.value) || 1))
+                        }
                       />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Phòng</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        Phòng
+                      </Label>
                       <Input
                         type="number"
                         min={1}
                         value={rooms}
-                        onChange={(e) => setRooms(Math.max(1, Number(e.target.value) || 1))}
+                        onChange={(e) =>
+                          setRooms(Math.max(1, Number(e.target.value) || 1))
+                        }
                       />
                     </div>
                   </div>
@@ -740,21 +837,27 @@ export default function HotelBooking() {
                     <span>Gần trung tâm</span>
                     <Switch
                       checked={filters.nearCenter}
-                      onCheckedChange={(v) => setFilters((f) => ({ ...f, nearCenter: v }))}
+                      onCheckedChange={(v) =>
+                        setFilters((f) => ({ ...f, nearCenter: v }))
+                      }
                     />
                   </label>
                   <label className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
                     <span>4★+</span>
                     <Switch
                       checked={filters.starsGte4}
-                      onCheckedChange={(v) => setFilters((f) => ({ ...f, starsGte4: v }))}
+                      onCheckedChange={(v) =>
+                        setFilters((f) => ({ ...f, starsGte4: v }))
+                      }
                     />
                   </label>
                   <label className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
                     <span>Giá tốt</span>
                     <Switch
                       checked={filters.cheapFirst}
-                      onCheckedChange={(v) => setFilters((f) => ({ ...f, cheapFirst: v }))}
+                      onCheckedChange={(v) =>
+                        setFilters((f) => ({ ...f, cheapFirst: v }))
+                      }
                     />
                   </label>
                 </div>
@@ -766,7 +869,9 @@ export default function HotelBooking() {
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Tóm tắt nhanh
                     </p>
-                    <p className="text-sm font-semibold text-foreground">{cityInput || "Chưa chọn điểm đến"}</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {cityInput || "Chưa chọn điểm đến"}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {checkIn} → {checkOut} · {guests} khách · {rooms} phòng
                     </p>
@@ -781,7 +886,11 @@ export default function HotelBooking() {
                     <MapPin size={14} />
                     <span>
                       Thành phố: {cityInput || "—"} | Bộ lọc:{" "}
-                      {[filters.nearCenter && "Gần trung tâm", filters.starsGte4 && "4★+", filters.cheapFirst && "Giá tốt"]
+                      {[
+                        filters.nearCenter && "Gần trung tâm",
+                        filters.starsGte4 && "4★+",
+                        filters.cheapFirst && "Giá tốt",
+                      ]
                         .filter(Boolean)
                         .join(", ") || "—"}
                     </span>
@@ -790,7 +899,11 @@ export default function HotelBooking() {
               </div>
 
               <div className="flex flex-col gap-3 ml-auto md:flex-row md:items-center md:justify-between">
-                <Button size="lg" onClick={handleSearch} disabled={loadingSearch}>
+                <Button
+                  size="lg"
+                  onClick={handleSearch}
+                  disabled={loadingSearch}
+                >
                   <Search size={16} className="mr-2" />
                   {loadingSearch ? "Đang tìm..." : "Tìm nhanh"}
                 </Button>
@@ -823,10 +936,13 @@ export default function HotelBooking() {
                       <div>
                         <p className="font-semibold">{h.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {h.stars}★ · {h.rating ?? "--"} điểm · Cách trung tâm {h.distanceToCenterKm ?? 1.2} km
+                          {h.stars}★ · {h.rating ?? "--"} điểm · Cách trung tâm{" "}
+                          {h.distanceToCenterKm ?? 1.2} km
                         </p>
                       </div>
-                      <Badge variant="outline">Từ {h.priceFrom.toLocaleString("vi-VN")} ₫/đêm</Badge>
+                      <Badge variant="outline">
+                        Từ {h.priceFrom.toLocaleString("vi-VN")} ₫/đêm
+                      </Badge>
                     </div>
                   </button>
                 ))}
@@ -859,21 +975,25 @@ export default function HotelBooking() {
                     <div className="px-10">
                       <Carousel className="w-full">
                         <CarouselContent>
-                          {getHotelImages(selectedHotel.id).map((imgUrl, idx) => (
-                            <CarouselItem key={idx}>
-                              <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
-                                <img
-                                  src={imgUrl}
-                                  alt={`${selectedHotel.name} - Ảnh ${idx + 1}`}
-                                  className="h-full w-full object-cover"
-                                  loading="lazy"
-                                />
-                                <div className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-1 text-xs text-white">
-                                  {idx + 1} / 5
+                          {getHotelImages(selectedHotel.id).map(
+                            (imgUrl, idx) => (
+                              <CarouselItem key={idx}>
+                                <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
+                                  <img
+                                    src={imgUrl}
+                                    alt={`${selectedHotel.name} - Ảnh ${
+                                      idx + 1
+                                    }`}
+                                    className="h-full w-full object-cover"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-1 text-xs text-white">
+                                    {idx + 1} / 5
+                                  </div>
                                 </div>
-                              </div>
-                            </CarouselItem>
-                          ))}
+                              </CarouselItem>
+                            )
+                          )}
                         </CarouselContent>
                         <CarouselPrevious />
                         <CarouselNext />
@@ -891,7 +1011,9 @@ export default function HotelBooking() {
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold">Chọn hạng phòng</p>
                       <Badge variant="secondary">
-                        {loadingRooms ? "Đang tải..." : `${roomsOptions.length} lựa chọn`}
+                        {loadingRooms
+                          ? "Đang tải..."
+                          : `${roomsOptions.length} lựa chọn`}
                       </Badge>
                     </div>
                     <div className="space-y-3 max-h-[300px] overflow-y-auto scrollbar-hide">
@@ -914,7 +1036,11 @@ export default function HotelBooking() {
                               <p className="font-semibold">{r.name}</p>
                               <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                                 {r.perks.map((perk) => (
-                                  <Badge key={perk} variant="outline" className="text-xs">
+                                  <Badge
+                                    key={perk}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
                                     {perk}
                                   </Badge>
                                 ))}
@@ -924,13 +1050,19 @@ export default function HotelBooking() {
                               <p className="text-sm font-semibold text-emerald-700">
                                 {r.pricePerNight.toLocaleString("vi-VN")} ₫/đêm
                               </p>
-                              {r.refundable && <p className="text-[11px] text-emerald-600">Hủy miễn phí</p>}
+                              {r.refundable && (
+                                <p className="text-[11px] text-emerald-600">
+                                  Hủy miễn phí
+                                </p>
+                              )}
                             </div>
                           </div>
                         </button>
                       ))}
                       {!roomsOptions.length && !loadingRooms && (
-                        <p className="text-xs text-muted-foreground">Chọn khách sạn để xem hạng phòng.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Chọn khách sạn để xem hạng phòng.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -942,7 +1074,8 @@ export default function HotelBooking() {
                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
                   <ImageIcon size={48} className="text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">
-                    Chọn một khách sạn từ danh sách bên trái để xem hình ảnh và hạng phòng
+                    Chọn một khách sạn từ danh sách bên trái để xem hình ảnh và
+                    hạng phòng
                   </p>
                 </div>
               )}
@@ -981,7 +1114,9 @@ export default function HotelBooking() {
                 <Separator />
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Tạm tính</span>
-                  <span className="font-semibold">{totalPrice.toLocaleString("vi-VN")} ₫</span>
+                  <span className="font-semibold">
+                    {totalPrice.toLocaleString("vi-VN")} ₫
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Phí</span>
@@ -993,18 +1128,27 @@ export default function HotelBooking() {
                 </div>
               </div>
               <div className="space-y-2 text-sm">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Tài khoản nguồn</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">
+                  Tài khoản nguồn
+                </p>
                 {accounts.length > 0 ? (
                   <div className="rounded-xl border bg-muted/30 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono font-semibold">{selectedAccount}</span>
+                      <span className="font-mono font-semibold">
+                        {selectedAccount}
+                      </span>
                       <span className="text-emerald-600 font-semibold">
-                        {accounts.find((a) => a.accountNumber === selectedAccount)?.balance.toLocaleString("vi-VN")} ₫
+                        {accounts
+                          .find((a) => a.accountNumber === selectedAccount)
+                          ?.balance.toLocaleString("vi-VN")}{" "}
+                        ₫
                       </span>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Chưa có tài khoản</p>
+                  <p className="text-xs text-muted-foreground">
+                    Chưa có tài khoản
+                  </p>
                 )}
               </div>
               <div className="flex flex-wrap gap-3 mt-auto pt-3">
@@ -1020,7 +1164,9 @@ export default function HotelBooking() {
             {/* Right column: Booking Info & Notes - 3/10 */}
             <Card className="p-4 space-y-4 md:col-span-3">
               <div>
-                <p className="text-sm font-semibold mb-3">Thông tin đặt phòng</p>
+                <p className="text-sm font-semibold mb-3">
+                  Thông tin đặt phòng
+                </p>
                 <div className="space-y-3">
                   <div className="flex gap-3">
                     <div className="w-16 h-20 rounded overflow-hidden bg-muted flex-shrink-0">
@@ -1031,12 +1177,16 @@ export default function HotelBooking() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm line-clamp-2">{selectedHotel.name}</p>
+                      <p className="font-semibold text-sm line-clamp-2">
+                        {selectedHotel.name}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {selectedHotel.stars}★ · {selectedHotel.rating ?? "--"} điểm
+                        {selectedHotel.stars}★ · {selectedHotel.rating ?? "--"}{" "}
+                        điểm
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Cách trung tâm {selectedHotel.distanceToCenterKm ?? 1.2} km
+                        Cách trung tâm {selectedHotel.distanceToCenterKm ?? 1.2}{" "}
+                        km
                       </p>
                     </div>
                   </div>
@@ -1044,7 +1194,9 @@ export default function HotelBooking() {
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Hạng phòng:</span>
-                      <span className="font-medium text-right">{selectedRoom.name}</span>
+                      <span className="font-medium text-right">
+                        {selectedRoom.name}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Nhận phòng:</span>
@@ -1076,33 +1228,49 @@ export default function HotelBooking() {
                   </div>
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div>
-                <p className="text-sm font-semibold mb-3">Cam kết của chúng tôi</p>
+                <p className="text-sm font-semibold mb-3">
+                  Cam kết của chúng tôi
+                </p>
                 <div className="space-y-3 text-xs">
                   <div className="flex items-start gap-2">
-                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
-                    <span>Xác nhận đặt phòng ngay lập tức qua email và SMS</span>
+                    <Check
+                      size={14}
+                      className="text-emerald-600 mt-0.5 shrink-0"
+                    />
+                    <span>
+                      Xác nhận đặt phòng ngay lập tức qua email và SMS
+                    </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <Check
+                      size={14}
+                      className="text-emerald-600 mt-0.5 shrink-0"
+                    />
                     <span>Giá tốt nhất được đảm bảo, không phí ẩn</span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <Check
+                      size={14}
+                      className="text-emerald-600 mt-0.5 shrink-0"
+                    />
                     <span>Hỗ trợ khách hàng 24/7 qua hotline 1900-xxxx</span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <Check size={14} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <Check
+                      size={14}
+                      className="text-emerald-600 mt-0.5 shrink-0"
+                    />
                     <span>Thanh toán an toàn, bảo mật thông tin</span>
                   </div>
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div>
                 <p className="text-sm font-semibold mb-3">Lưu ý quan trọng</p>
                 <div className="space-y-2 text-xs text-muted-foreground">
@@ -1110,9 +1278,13 @@ export default function HotelBooking() {
                   <p>• Vui lòng mang theo CCCD/Hộ chiếu khi nhận phòng</p>
                   <p>• Chính sách hủy phòng theo quy định của khách sạn</p>
                   {selectedRoom.refundable ? (
-                    <p className="text-emerald-600 font-medium">✓ Phòng này có thể hoàn tiền</p>
+                    <p className="text-emerald-600 font-medium">
+                      ✓ Phòng này có thể hoàn tiền
+                    </p>
                   ) : (
-                    <p className="text-amber-600 font-medium">⚠ Phòng này không hoàn tiền</p>
+                    <p className="text-amber-600 font-medium">
+                      ⚠ Phòng này không hoàn tiền
+                    </p>
                   )}
                 </div>
               </div>

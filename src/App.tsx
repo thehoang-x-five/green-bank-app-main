@@ -369,6 +369,15 @@ const App = () => (
             path="/utilities/mobile-history"
             element={<UtilityMobileHistory />}
           />
+          <Route
+            path="/utilities/movie-booking"
+            element={<Navigate to="/utilities/movie" replace />}
+          />
+
+          <Route
+            path="/utilities/hotel-booking"
+            element={<Navigate to="/utilities/hotel" replace />}
+          />
 
           {/* Officer area */}
           <Route path="/officer" element={<OfficerDashboard />} />

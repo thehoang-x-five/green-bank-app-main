@@ -107,7 +107,9 @@ export default function UtilityMovie({
   const selectedCinema = CINEMAS.find(
     (cinema) => cinema.name === formData.movieCinema
   );
-  const selectedMovie = MOVIES.find((movie) => movie.name === formData.movieName);
+  const selectedMovie = MOVIES.find(
+    (movie) => movie.name === formData.movieName
+  );
 
   const filteredMovies = useMemo(() => {
     if (!movieSearch) return MOVIES;
@@ -306,7 +308,9 @@ export default function UtilityMovie({
           </DialogContent>
         </Dialog>
         {fieldError(formData.movieName) && (
-          <p className="text-xs text-destructive">Chọn phim trước khi tiếp tục.</p>
+          <p className="text-xs text-destructive">
+            Chọn phim trước khi tiếp tục.
+          </p>
         )}
       </section>
 
@@ -322,7 +326,10 @@ export default function UtilityMovie({
                 type="date"
                 value={formData.movieDate}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, movieDate: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    movieDate: e.target.value,
+                  }))
                 }
                 className="border-0 p-0 shadow-none focus-visible:ring-0"
               />
@@ -380,7 +387,9 @@ export default function UtilityMovie({
         </Label>
         <div className="flex items-center justify-between rounded-xl border bg-white/80 px-3 py-3 shadow-sm">
           <div>
-            <p className="text-sm font-semibold text-foreground">{tickets} vé</p>
+            <p className="text-sm font-semibold text-foreground">
+              {tickets} vé
+            </p>
             <p className="text-xs text-muted-foreground">
               {formatPrice(BASE_PRICE)} đ / vé · tối đa 10 vé
             </p>

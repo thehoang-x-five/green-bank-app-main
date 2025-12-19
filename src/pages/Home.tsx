@@ -42,11 +42,11 @@ const Home = () => {
     },
     { icon: Wifi, label: "Nạp data 4G", path: "/utilities/data" },
     { icon: Plane, label: "Vé máy bay", path: "/utilities/flight" },
-    { icon: Film, label: "Vé xem phim", path: "/utilities/movie-booking" },
+    { icon: Film, label: "Vé xem phim", path: "/utilities/movie" },
     {
       icon: Hotel,
       label: "Đặt phòng khách sạn",
-      path: "/utilities/hotel-booking",
+      path: "/utilities/hotel",
     },
   ];
 
