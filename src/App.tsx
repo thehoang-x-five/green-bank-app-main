@@ -3,9 +3,19 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import type { UtilityType } from "@/pages/utilities/utilityTypes";
 import DevSeedOfficersPage from "@/pages/DevSeedOfficers";
+
+// ✅ [PATCH-ADD-TRANSFER-BIOMETRIC] thêm từ code (2)
 import TransferBiometricConfirm from "@/pages/TransferBiometricConfirm";
 
+// ✅ [PATCH-ADD-TRANSFER-OTP] thêm từ code (2)
+import TransferOtpConfirm from "@/pages/TransferOtpConfirm";
+
+// ✅ [PATCH-ADD-PAYMENT-DEPOSIT-WITHDRAW] thêm từ code (2)
+import PaymentAccountDeposit from "@/pages/PaymentAccountDeposit";
+import PaymentAccountWithdraw from "@/pages/PaymentAccountWithdraw";
 
 // Auth & common
 import Login from "@/pages/Login";
@@ -42,15 +52,10 @@ import SupportHelp from "@/pages/SupportHelp";
 import TransactionDetail from "@/pages/TransactionDetail";
 import UtilityBills from "@/pages/UtilityBills";
 import UtilityReceipt from "@/pages/UtilityReceipt";
-import HotelBooking from "@/pages/HotelBooking";
-import MovieBooking from "@/pages/MovieBooking";
 import UtilityMobileHistory from "@/pages/UtilityMobileHistory";
 import UtilityConfirmPayment from "@/pages/utilities/UtilityConfirmPayment";
 
 import BottomNav from "@/components/BottomNav";
-
-import PaymentAccountDeposit from "@/pages/PaymentAccountDeposit";
-import PaymentAccountWithdraw from "@/pages/PaymentAccountWithdraw";
 
 // Officer area pages
 import OfficerDashboard from "@/pages/OfficerDashboard";
@@ -64,12 +69,19 @@ import OfficerTransactionsPage from "@/pages/OfficerTransactionsPage";
 import OfficerEKYCPage from "@/pages/OfficerEKYCPage";
 import OfficerEKYCDetailPage from "@/pages/OfficerEKYCDetailPage";
 
-// 🔹 MÀN XÁC THỰC OTP CHUYỂN TIỀN
-import TransferOtpConfirm from "@/pages/TransferOtpConfirm";
-
-// ... toàn bộ phần import phía trên giữ nguyên như anh gửi
-
 const queryClient = new QueryClient();
+
+const UtilitiesShell = () => {
+  const { type } = useParams<{ type: UtilityType }>();
+  const hideBottomNav = type === "mobilePhone";
+
+  return (
+    <>
+      <UtilityBills />
+      {!hideBottomNav && <BottomNav />}
+    </>
+  );
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -80,11 +92,9 @@ const App = () => (
         <Routes>
           {/* Landing */}
           <Route path="/" element={<Navigate to="/login" replace />} />
-
           {/* Auth */}
           <Route path="/login" element={<Login />} />
           <Route path="/otp" element={<OtpVerification />} />
-
           {/* Customer area */}
           <Route
             path="/home"
@@ -159,6 +169,20 @@ const App = () => (
             }
           />
 
+          {/* ✅ [PATCH-ADD-TRANSFER-BIOMETRIC-ROUTE] thêm từ code (2) */}
+          <Route
+            path="/transfer/biometric"
+            element={
+              <>
+                <TransferBiometricConfirm />
+                <BottomNav />
+              </>
+            }
+          />
+
+          {/* ✅ [PATCH-ADD-TRANSFER-OTP-ROUTE] thêm từ code (2) */}
+          <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
+
           {/* Accounts list */}
           <Route
             path="/accounts"
@@ -169,13 +193,34 @@ const App = () => (
               </>
             }
           />
-
           {/* Payment account detail */}
           <Route
             path="/accounts/payment"
             element={
               <>
                 <PaymentAccountDetail />
+                <BottomNav />
+              </>
+            }
+          />
+
+          {/* ✅ [PATCH-ADD-PAYMENT-DEPOSIT-ROUTE] thêm từ code (2) */}
+          <Route
+            path="/accounts/payment/deposit"
+            element={
+              <>
+                <PaymentAccountDeposit />
+                <BottomNav />
+              </>
+            }
+          />
+
+          {/* ✅ [PATCH-ADD-PAYMENT-WITHDRAW-ROUTE] thêm từ code (2) */}
+          <Route
+            path="/accounts/payment/withdraw"
+            element={
+              <>
+                <PaymentAccountWithdraw />
                 <BottomNav />
               </>
             }
@@ -191,7 +236,6 @@ const App = () => (
               </>
             }
           />
-
           {/* Mortgage account detail – CÓ PARAM accountNumber */}
           <Route
             path="/accounts/mortgage/:accountNumber"
@@ -202,10 +246,8 @@ const App = () => (
               </>
             }
           />
-
           {/* Dev seed officers */}
           <Route path="/dev-seed-officers" element={<DevSeedOfficersPage />} />
-
           <Route
             path="/notifications"
             element={
@@ -233,7 +275,6 @@ const App = () => (
               </>
             }
           />
-
           {/* Profile & settings */}
           <Route
             path="/profile"
@@ -298,7 +339,6 @@ const App = () => (
               </>
             }
           />
-
           {/* Transaction detail */}
           <Route
             path="/transaction/:id"
@@ -311,39 +351,13 @@ const App = () => (
           />
 
           {/* Utilities */}
-          <Route
-            path="/utilities/hotel-booking"
-            element={
-              <>
-                <HotelBooking />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/utilities/movie-booking"
-            element={
-              <>
-                <MovieBooking />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/utilities/:type"
-            element={
-              <>
-                <UtilityBills />
-                <BottomNav />
-              </>
-            }
-          />
+          <Route path="/utilities/:type" element={<UtilitiesShell />} />
+
           <Route
             path="/utilities/result"
             element={
               <>
                 <UtilityReceipt />
-                <BottomNav />
               </>
             }
           />
@@ -381,42 +395,7 @@ const App = () => (
             element={<OfficerTransactionsPage />}
           />
           <Route path="/officer/ekyc" element={<OfficerEKYCPage />} />
-          <Route
-            path="/officer/ekyc/:id"
-            element={<OfficerEKYCDetailPage />}
-          />
-          <Route
-            path="/transfer/biometric"
-            element={
-              <>
-                <TransferBiometricConfirm />
-                <BottomNav />
-              </>
-            }
-          />
-
-          <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
-
-          {/* 🔹 Nạp / Rút tài khoản thanh toán (không dùng :id) */}
-          <Route
-            path="/accounts/payment/deposit"
-            element={
-              <>
-                <PaymentAccountDeposit />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/accounts/payment/withdraw"
-            element={
-              <>
-                <PaymentAccountWithdraw />
-                <BottomNav />
-              </>
-            }
-          />
-
+          <Route path="/officer/ekyc/:id" element={<OfficerEKYCDetailPage />} />
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>
