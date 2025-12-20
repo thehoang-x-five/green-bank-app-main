@@ -387,8 +387,13 @@ export default function HotelBooking() {
     setSelectedRoom(null);
     setLoadingRooms(true);
     try {
-      const roomsList = await fetchHotelRooms(hotel.id);
+      // ✅ Pass check-in/check-out dates to filter out booked rooms
+      const roomsList = await fetchHotelRooms(hotel.id, checkIn, checkOut);
       setRoomsOptions(roomsList);
+      
+      if (roomsList.length === 0) {
+        toast.info("Không có phòng trống trong khoảng thời gian này");
+      }
     } catch (err) {
       console.error(err);
       toast.error("Không tải được danh sách hạng phòng");

@@ -19,22 +19,77 @@ export type UserAccount = {
   balance: number;
 };
 
-export async function fetchHotelRooms(hotelId: string): Promise<HotelRoom[]> {
+/**
+ * ✅ Check if a room is available for the given date range
+ * Check-in: 14:00, Check-out: 12:00
+ * A room is unavailable if there's an existing booking that overlaps with the requested dates
+ */
+async function isRoomAvailable(
+  roomId: string,
+  checkIn: string,
+  checkOut: string
+): Promise<boolean> {
+  const requestCheckIn = new Date(`${checkIn}T14:00:00`).getTime();
+  const requestCheckOut = new Date(`${checkOut}T12:00:00`).getTime();
+
+  // Query all bookings for this room
+  const bookingsRef = collection(fbDb, "hotel_bookings");
+  const q = query(
+    bookingsRef,
+    where("roomId", "==", roomId),
+    where("status", "==", "PAID")
+  );
+  const snap = await getDocs(q);
+
+  // Check for overlapping bookings
+  for (const doc of snap.docs) {
+    const booking = doc.data();
+    const existingCheckIn = booking.checkInDateTime as number;
+    const existingCheckOut = booking.checkOutDateTime as number;
+
+    // Check if date ranges overlap
+    // Overlap occurs if: requestCheckIn < existingCheckOut AND requestCheckOut > existingCheckIn
+    if (requestCheckIn < existingCheckOut && requestCheckOut > existingCheckIn) {
+      return false; // Room is booked during this period
+    }
+  }
+
+  return true; // Room is available
+}
+
+export async function fetchHotelRooms(
+  hotelId: string,
+  checkIn?: string,
+  checkOut?: string
+): Promise<HotelRoom[]> {
   const roomsRef = collection(fbDb, "hotel_rooms");
   const q = query(roomsRef, where("hotelId", "==", hotelId));
   const snap = await getDocs(q);
   const rooms: HotelRoom[] = [];
-  snap.forEach((doc) => {
+
+  for (const doc of snap.docs) {
     const d = doc.data() as Record<string, unknown>;
-    rooms.push({
+    const room: HotelRoom = {
       id: doc.id,
       hotelId,
       name: (d.name as string) || "Phòng",
       pricePerNight: (d.pricePerNight as number) || 0,
       perks: Array.isArray(d.perks) ? (d.perks as string[]) : [],
       refundable: (d.refundable as boolean) ?? false,
-    });
-  });
+    };
+
+    // ✅ Filter out rooms that are already booked for the requested dates
+    if (checkIn && checkOut) {
+      const available = await isRoomAvailable(doc.id, checkIn, checkOut);
+      if (available) {
+        rooms.push(room);
+      }
+    } else {
+      // No date filter - return all rooms
+      rooms.push(room);
+    }
+  }
+
   return rooms;
 }
 
@@ -160,7 +215,12 @@ export async function createHotelBooking(params: {
     createdAt: serverTimestamp(),
   });
 
-  const bookingRef = await addDoc(collection(fbDb, "bookings"), {
+  // ✅ Save booking with check-in/check-out timestamps for availability checking
+  // Check-in: 14:00 (2 PM), Check-out: 12:00 (noon)
+  const checkInDateTime = new Date(`${params.checkIn}T14:00:00`).getTime();
+  const checkOutDateTime = new Date(`${params.checkOut}T12:00:00`).getTime();
+
+  const bookingRef = await addDoc(collection(fbDb, "hotel_bookings"), {
     status: "PAID",
     customerUid: currentUser.uid,
     hotelId: params.hotel.id,
@@ -169,6 +229,8 @@ export async function createHotelBooking(params: {
     roomName: params.room.name,
     checkIn: params.checkIn,
     checkOut: params.checkOut,
+    checkInDateTime,
+    checkOutDateTime,
     nights: params.nights,
     guests: params.guests,
     rooms: params.rooms,

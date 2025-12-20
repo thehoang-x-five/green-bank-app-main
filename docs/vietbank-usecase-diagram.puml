@@ -1,0 +1,399 @@
+@startuml VietBank - Use Case Diagram
+
+' ====== METADATA ======
+title VietBank Digital Banking System\nUse Case Diagram
+footer Generated: %date("yyyy-MM-dd")
+scale 1.0
+
+' ====== STYLING ======
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam shadowing false
+
+' Colors
+skinparam actor {
+  BackgroundColor #E3F2FD
+  BorderColor #2196F3
+}
+
+skinparam usecase {
+  BackgroundColor #FFF3E0
+  BorderColor #FF9800
+  BackgroundColor<<Critical>> #FFEBEE
+  BorderColor<<Critical>> #F44336
+  BackgroundColor<<Admin>> #E8F5E9
+  BorderColor<<Admin>> #4CAF50
+}
+
+skinparam package {
+  BackgroundColor #F5F5F5
+  BorderColor #9E9E9E
+  FontStyle bold
+}
+
+' ====================================================================
+' ACTORS
+' ====================================================================
+
+:Customer: as customer
+:Officer: as officer
+:System: as system
+
+' External systems
+actor "Email Service" as email <<External>>
+actor "Biometric Device" as biometric <<External>>
+actor "Payment Gateway\n(Stripe)" as stripe <<External>>
+
+' ====================================================================
+' USE CASES - AUTHENTICATION & ACCOUNT MANAGEMENT
+' ====================================================================
+
+package "Authentication & Account Management" {
+  
+  usecase "Register Account" as UC_Register
+  usecase "Login with Email/Password" as UC_Login
+  usecase "Login with Biometric" as UC_BiometricLogin
+  usecase "Logout" as UC_Logout
+  usecase "Reset Password" as UC_ResetPassword
+  usecase "Change Password" as UC_ChangePassword
+  usecase "Change Transaction PIN" as UC_ChangePIN
+  
+  usecase "View Profile" as UC_ViewProfile
+  usecase "View Account Balance" as UC_ViewBalance
+  usecase "View Transaction History" as UC_ViewHistory
+  usecase "View Notifications" as UC_ViewNotifications
+}
+
+' ====================================================================
+' USE CASES - eKYC (ELECTRONIC KNOW YOUR CUSTOMER)
+' ====================================================================
+
+package "eKYC (Electronic Know Your Customer)" {
+  
+  usecase "Upload ID Documents" as UC_UploadDocs
+  usecase "Submit eKYC Information" as UC_SubmitEKYC
+  usecase "Check eKYC Status" as UC_CheckEKYCStatus
+  
+  usecase "Review eKYC Submissions" as UC_ReviewEKYC <<Admin>>
+  usecase "Approve eKYC" as UC_ApproveEKYC <<Admin>>
+  usecase "Reject eKYC" as UC_RejectEKYC <<Admin>>
+  usecase "Assign CIF Number" as UC_AssignCIF <<Admin>>
+}
+
+' ====================================================================
+' USE CASES - MONEY TRANSFER
+' ====================================================================
+
+package "Money Transfer" {
+  
+  usecase "Transfer Money (Internal)" as UC_TransferInternal <<Critical>>
+  usecase "Transfer Money (External)" as UC_TransferExternal <<Critical>>
+  usecase "Save Recipient" as UC_SaveRecipient
+  usecase "View Saved Recipients" as UC_ViewRecipients
+  
+  usecase "Verify Transaction PIN" as UC_VerifyPIN <<Critical>>
+  usecase "Verify Biometric (High Value)" as UC_VerifyBiometric <<Critical>>
+  usecase "Send OTP Email" as UC_SendOTP <<Critical>>
+  usecase "Verify OTP" as UC_VerifyOTP <<Critical>>
+  usecase "Resend OTP" as UC_ResendOTP
+  
+  usecase "Deduct Balance (Atomic)" as UC_DeductBalance <<Critical>>
+  usecase "Credit Balance (Atomic)" as UC_CreditBalance <<Critical>>
+  usecase "Create Transaction Record" as UC_CreateTransaction
+  usecase "Send Transfer Notification" as UC_SendTransferNotification
+}
+
+' ====================================================================
+' USE CASES - DEPOSIT & WITHDRAWAL
+' ====================================================================
+
+package "Deposit & Withdrawal" {
+  
+  usecase "Deposit Cash" as UC_DepositCash
+  usecase "Withdraw Cash (Simple)" as UC_WithdrawSimple
+  usecase "Withdraw Cash (OTP)" as UC_WithdrawOTP <<Critical>>
+  usecase "Topup via Stripe" as UC_StripeTopup
+  usecase "Finalize Stripe Payment" as UC_FinalizeStripe <<Critical>>
+}
+
+' ====================================================================
+' USE CASES - MOVIE BOOKING
+' ====================================================================
+
+package "Movie Booking Utility" {
+  
+  usecase "Search Cinemas by Location" as UC_SearchCinemas
+  usecase "Browse Movies" as UC_BrowseMovies
+  usecase "View Movie Details" as UC_ViewMovieDetails
+  usecase "View Showtimes" as UC_ViewShowtimes
+  usecase "Select Seats" as UC_SelectSeats
+  usecase "Book Movie Tickets" as UC_BookMovie <<Critical>>
+  usecase "Update Occupied Seats (Atomic)" as UC_UpdateSeats <<Critical>>
+  usecase "View Movie Booking History" as UC_ViewMovieBookings
+}
+
+' ====================================================================
+' USE CASES - HOTEL BOOKING
+' ====================================================================
+
+package "Hotel Booking Utility" {
+  
+  usecase "Search Hotels by Location" as UC_SearchHotels
+  usecase "View Hotel Details" as UC_ViewHotelDetails
+  usecase "View Available Rooms" as UC_ViewRooms
+  usecase "Check Room Availability" as UC_CheckRoomAvailability
+  usecase "Book Hotel Room" as UC_BookHotel <<Critical>>
+  usecase "View Hotel Booking History" as UC_ViewHotelBookings
+}
+
+' ====================================================================
+' USE CASES - OFFICER PORTAL
+' ====================================================================
+
+package "Officer Portal (Admin)" {
+  
+  usecase "View Dashboard" as UC_Dashboard <<Admin>>
+  usecase "Create Customer Account" as UC_CreateCustomer <<Admin>>
+  usecase "View Customer List" as UC_ViewCustomers <<Admin>>
+  usecase "View Customer Details" as UC_ViewCustomerDetails <<Admin>>
+  usecase "Lock/Unlock Account" as UC_LockAccount <<Admin>>
+  usecase "View All Transactions" as UC_ViewAllTransactions <<Admin>>
+  usecase "Manage Interest Rates" as UC_ManageRates <<Admin>>
+}
+
+' ====================================================================
+' RELATIONSHIPS - CUSTOMER
+' ====================================================================
+
+' Authentication
+customer --> UC_Register
+customer --> UC_Login
+customer --> UC_BiometricLogin
+customer --> UC_Logout
+customer --> UC_ResetPassword
+customer --> UC_ChangePassword
+customer --> UC_ChangePIN
+
+' Profile & Account
+customer --> UC_ViewProfile
+customer --> UC_ViewBalance
+customer --> UC_ViewHistory
+customer --> UC_ViewNotifications
+
+' eKYC
+customer --> UC_UploadDocs
+customer --> UC_SubmitEKYC
+customer --> UC_CheckEKYCStatus
+
+' Money Transfer
+customer --> UC_TransferInternal
+customer --> UC_TransferExternal
+customer --> UC_SaveRecipient
+customer --> UC_ViewRecipients
+customer --> UC_ResendOTP
+
+' Deposit & Withdrawal
+customer --> UC_DepositCash
+customer --> UC_WithdrawSimple
+customer --> UC_WithdrawOTP
+customer --> UC_StripeTopup
+
+' Movie Booking
+customer --> UC_SearchCinemas
+customer --> UC_BrowseMovies
+customer --> UC_ViewMovieDetails
+customer --> UC_ViewShowtimes
+customer --> UC_SelectSeats
+customer --> UC_BookMovie
+customer --> UC_ViewMovieBookings
+
+' Hotel Booking
+customer --> UC_SearchHotels
+customer --> UC_ViewHotelDetails
+customer --> UC_ViewRooms
+customer --> UC_BookHotel
+customer --> UC_ViewHotelBookings
+
+' ====================================================================
+' RELATIONSHIPS - OFFICER
+' ====================================================================
+
+officer --> UC_Dashboard
+officer --> UC_CreateCustomer
+officer --> UC_ViewCustomers
+officer --> UC_ViewCustomerDetails
+officer --> UC_LockAccount
+officer --> UC_ViewAllTransactions
+officer --> UC_ManageRates
+
+' eKYC Management
+officer --> UC_ReviewEKYC
+officer --> UC_ApproveEKYC
+officer --> UC_RejectEKYC
+
+' ====================================================================
+' INCLUDE RELATIONSHIPS (Mandatory sub-use cases)
+' ====================================================================
+
+' Transfer includes PIN + OTP verification
+UC_TransferInternal ..> UC_VerifyPIN : <<include>>
+UC_TransferInternal ..> UC_SendOTP : <<include>>
+UC_TransferInternal ..> UC_VerifyOTP : <<include>>
+UC_TransferInternal ..> UC_DeductBalance : <<include>>
+UC_TransferInternal ..> UC_CreditBalance : <<include>>
+UC_TransferInternal ..> UC_CreateTransaction : <<include>>
+UC_TransferInternal ..> UC_SendTransferNotification : <<include>>
+
+UC_TransferExternal ..> UC_VerifyPIN : <<include>>
+UC_TransferExternal ..> UC_SendOTP : <<include>>
+UC_TransferExternal ..> UC_VerifyOTP : <<include>>
+UC_TransferExternal ..> UC_DeductBalance : <<include>>
+UC_TransferExternal ..> UC_CreateTransaction : <<include>>
+UC_TransferExternal ..> UC_SendTransferNotification : <<include>>
+
+' Deposit includes PIN verification
+UC_DepositCash ..> UC_VerifyPIN : <<include>>
+
+' Withdraw OTP includes PIN + OTP
+UC_WithdrawOTP ..> UC_VerifyPIN : <<include>>
+UC_WithdrawOTP ..> UC_SendOTP : <<include>>
+UC_WithdrawOTP ..> UC_VerifyOTP : <<include>>
+UC_WithdrawOTP ..> UC_DeductBalance : <<include>>
+
+' Stripe topup finalization
+UC_FinalizeStripe ..> UC_VerifyPIN : <<include>>
+UC_FinalizeStripe ..> UC_CreditBalance : <<include>>
+
+' Movie booking includes payment flow
+UC_BookMovie ..> UC_VerifyPIN : <<include>>
+UC_BookMovie ..> UC_DeductBalance : <<include>>
+UC_BookMovie ..> UC_UpdateSeats : <<include>>
+UC_BookMovie ..> UC_CreateTransaction : <<include>>
+
+' Hotel booking includes payment flow
+UC_BookHotel ..> UC_VerifyPIN : <<include>>
+UC_BookHotel ..> UC_DeductBalance : <<include>>
+UC_BookHotel ..> UC_CheckRoomAvailability : <<include>>
+UC_BookHotel ..> UC_CreateTransaction : <<include>>
+
+' eKYC approval includes CIF assignment
+UC_ApproveEKYC ..> UC_AssignCIF : <<include>>
+
+' ====================================================================
+' EXTEND RELATIONSHIPS (Optional/Conditional sub-use cases)
+' ====================================================================
+
+' High-value transfers require biometric
+UC_VerifyBiometric ..> UC_TransferInternal : <<extend>>\n{amount >= 10M VND}
+UC_VerifyBiometric ..> UC_TransferExternal : <<extend>>\n{amount >= 10M VND}
+UC_VerifyBiometric ..> UC_BookMovie : <<extend>>\n{amount >= 10M VND}
+UC_VerifyBiometric ..> UC_BookHotel : <<extend>>\n{amount >= 10M VND}
+
+' ====================================================================
+' EXTERNAL SYSTEM RELATIONSHIPS
+' ====================================================================
+
+' Email service sends OTP
+UC_SendOTP --> email : <<uses>>
+UC_SendTransferNotification --> email : <<uses>>
+
+' Biometric device for authentication
+UC_BiometricLogin --> biometric : <<uses>>
+UC_VerifyBiometric --> biometric : <<uses>>
+
+' Stripe for payment gateway
+UC_StripeTopup --> stripe : <<uses>>
+UC_FinalizeStripe --> stripe : <<uses>>
+
+' System auto-generates notifications
+UC_CreateTransaction --> system : <<triggers>>
+UC_DeductBalance --> system : <<triggers>>
+UC_CreditBalance --> system : <<triggers>>
+
+' ====================================================================
+' NOTES & CONSTRAINTS
+' ====================================================================
+
+note right of UC_TransferInternal
+  <b>Business Rules:</b>
+  • Requires eKYC verification
+  • PIN verification mandatory
+  • OTP expires in 2 minutes
+  • Max 5 OTP attempts
+  • Biometric required if >= 10M VND
+  • Atomic balance updates
+end note
+
+note right of UC_BookMovie
+  <b>Seat Booking:</b>
+  • Real-time seat availability
+  • Atomic seat reservation
+  • Prevents double-booking
+  • Occupied seats shown in red
+end note
+
+note right of UC_BookHotel
+  <b>Room Availability:</b>
+  • Check-in: 14:00
+  • Check-out: 12:00
+  • Date overlap detection
+  • Rooms hidden if booked
+end note
+
+note right of UC_ApproveEKYC
+  <b>eKYC Approval:</b>
+  • Officer reviews documents
+  • Assigns unique CIF number
+  • Enables transaction permission
+  • Updates user status to VERIFIED
+end note
+
+note right of UC_Login
+  <b>Security:</b>
+  • Max 5 failed login attempts
+  • Account locked after 5 failures
+  • Officer must unlock
+  • Biometric login available after
+    first successful password login
+end note
+
+note bottom of UC_VerifyPIN
+  <b>PIN Security:</b>
+  • 6-digit transaction PIN
+  • Max 5 failed attempts
+  • Account locked after 5 failures
+  • Separate from login password
+end note
+
+' ====================================================================
+' LEGEND
+' ====================================================================
+
+legend right
+  <b>Actor Types:</b>
+  • Customer: End user (bank customer)
+  • Officer: Bank staff (admin)
+  • System: Automated processes
+  • External: Third-party services
+  
+  <b>Use Case Colors:</b>
+  <color:#FF9800>█</color> Standard use case
+  <color:#F44336>█</color> Critical (security/money)
+  <color:#4CAF50>█</color> Admin only
+  
+  <b>Relationships:</b>
+  → : Actor performs use case
+  ..> <<include>> : Mandatory sub-use case
+  ..> <<extend>> : Optional/conditional
+  → <<uses>> : External system dependency
+  → <<triggers>> : System automation
+  
+  <b>Security Levels:</b>
+  • PIN: All transactions
+  • OTP: Transfers, withdrawals
+  • Biometric: High-value (>= 10M VND)
+  • eKYC: Required for all transactions
+end legend
+
+@enduml

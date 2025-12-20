@@ -1,0 +1,517 @@
+@startuml VietBank - Entity Relationship Diagram (ERD)
+
+' ====== METADATA ======
+title VietBank Digital Banking System\nEntity-Relationship Diagram (ERD)
+footer Generated: %date("yyyy-MM-dd") | Firebase Realtime Database + Firestore
+scale 1.0
+
+' ====== STYLING ======
+skinparam linetype ortho
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+' Colors for different database types
+skinparam entity {
+  BackgroundColor<<RTDB>> #E3F2FD
+  BorderColor<<RTDB>> #2196F3
+  BackgroundColor<<Firestore>> #FFF3E0
+  BorderColor<<Firestore>> #FF9800
+}
+
+skinparam package {
+  BackgroundColor #F5F5F5
+  BorderColor #9E9E9E
+  FontStyle bold
+}
+
+' ====================================================================
+' FIREBASE REALTIME DATABASE (RTDB) - Key-Value Store
+' ====================================================================
+
+package "Firebase Realtime Database (RTDB)" {
+
+  entity "users" as users <<RTDB>> {
+    * uid : string <<PK>>
+    --
+    * username : string
+    * email : string <<unique>>
+    * role : enum(CUSTOMER, OFFICER)
+    * status : enum(ACTIVE, LOCKED)
+    * ekycStatus : enum(PENDING, VERIFIED, REJECTED)
+    * canTransact : boolean
+    * createdAt : timestamp
+    --
+    phone : string
+    gender : string
+    dob : string
+    nationalId : string <<unique>>
+    idIssueDate : string
+    placeOfIssue : string
+    permanentAddress : string
+    contactAddress : string
+    cif : string <<unique>>
+    frontIdUrl : string
+    backIdUrl : string
+    selfieUrl : string
+    --
+    <i>Security Fields:</i>
+    transactionPinHash : string
+    pinFailCount : number
+    pinLockedUntil : timestamp
+    loginFailCount : number
+    lockedAt : timestamp
+    lockReason : string
+    passwordUpdatedAt : timestamp
+    pinUpdatedAt : timestamp
+  }
+
+  entity "accounts" as accounts <<RTDB>> {
+    * accountNumber : string <<PK>>
+    --
+    * uid : string <<FK>>
+    * balance : number
+    * status : enum(ACTIVE, LOCKED)
+    * createdAt : timestamp
+    --
+    pin : string
+    pinUpdatedAt : timestamp
+  }
+
+  entity "transactions" as transactions <<RTDB>> {
+    * transactionId : string <<PK>>
+    --
+    * type : enum(TRANSFER_INTERNAL, TRANSFER_EXTERNAL, CASH_DEPOSIT, CASH_WITHDRAW, MOVIE_BOOKING, HOTEL_BOOKING)
+    * status : enum(PENDING_OTP, PROCESSING, SUCCESS, FAILED)
+    * customerUid : string <<FK>>
+    * sourceAccountNumber : string <<FK>>
+    * destinationAccountNumber : string
+    * destinationName : string
+    * destinationBankName : string
+    * destinationBankCode : string
+    * amount : number
+    * fee : number
+    * content : string
+    * createdAt : timestamp
+    * executedAt : timestamp
+    --
+    isInternal : boolean
+    destAccUid : string <<FK>>
+    requiresBiometric : boolean
+    biometricVerifiedAt : timestamp
+  }
+
+  entity "transactionOtps" as transactionOtps <<RTDB>> {
+    * transactionId : string <<PK, FK>>
+    --
+    * uid : string <<FK>>
+    * email : string
+    * otp : string
+    * createdAt : timestamp
+    * expireAt : timestamp
+    * attemptsLeft : number
+    * used : boolean
+  }
+
+  entity "ekycSessions" as ekycSessions <<RTDB>> {
+    * emailKey : string <<PK>>
+    --
+    uid : string <<FK>>
+    email : string
+    fullName : string
+    dob : string
+    nationalId : string
+    address : string
+    gender : string
+    idIssueDate : string
+    --
+    submittedAt : timestamp
+    updatedAt : timestamp
+    status : enum(PENDING_CUSTOMER, PENDING_REVIEW, VERIFIED, REJECTED)
+    --
+    frontIdUrl : string
+    backIdUrl : string
+    selfieUrl : string
+    --
+    approvedAt : timestamp
+    rejectedAt : timestamp
+    rejectReason : string
+    cif : string
+  }
+
+  entity "notifications" as notifications <<RTDB>> {
+    * notificationId : string <<PK>>
+    --
+    * uid : string <<FK>>
+    * type : enum(BALANCE_CHANGE, SYSTEM, PROMOTION)
+    * direction : enum(IN, OUT)
+    * title : string
+    * message : string
+    * createdAt : timestamp
+    --
+    amount : number
+    accountNumber : string
+    balanceAfter : number
+    transactionId : string <<FK>>
+    read : boolean
+  }
+
+  entity "accountTransactions" as accountTransactions <<RTDB>> {
+    * accountNumber : string <<PK, FK>>
+    * transactionId : string <<PK, FK>>
+    --
+    * type : string
+    * direction : enum(IN, OUT)
+    * amount : number
+    * content : string
+    * createdAt : timestamp
+    * executedAt : timestamp
+    --
+    sourceAccountNumber : string
+    destinationAccountNumber : string
+    destinationBankName : string
+  }
+
+  entity "savedRecipients" as savedRecipients <<RTDB>> {
+    * uid : string <<PK, FK>>
+    * recipientKey : string <<PK>>
+    --
+    * name : string
+    * accountNumber : string
+    * bankName : string
+    * bankCode : string
+    * updatedAt : timestamp
+    --
+    nickname : string
+  }
+
+  entity "externalAccounts" as externalAccounts <<RTDB>> {
+    * bankName : string <<PK>>
+    * accountNumber : string <<PK>>
+    --
+    * fullName : string
+    * status : enum(ACTIVE, INACTIVE)
+    --
+    name : string
+  }
+
+  entity "counters" as counters <<RTDB>> {
+    * counterName : string <<PK>>
+    --
+    * value : number
+    --
+    <i>Examples:</i>
+    <i>- transactionCounter</i>
+    <i>- cifCounter</i>
+  }
+
+  entity "stripeTopups" as stripeTopups <<RTDB>> {
+    * uid : string <<PK, FK>>
+    * topupId : string <<PK>>
+    --
+    * accountNumber : string <<FK>>
+    * amount : number
+    * status : enum(CREATED, PAID_PENDING_2FA, COMPLETED, CANCELED)
+    * createdAt : timestamp
+    * updatedAt : timestamp
+    --
+    stripeLink : string
+    paidAt : timestamp
+    creditedAt : timestamp
+    completedAt : timestamp
+    canceledAt : timestamp
+  }
+}
+
+' ====================================================================
+' FIREBASE FIRESTORE - Document Database
+' ====================================================================
+
+package "Firebase Firestore" {
+
+  entity "cinemas" as cinemas <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * name : string
+    * address : string
+    * cityKey : string <<indexed>>
+    * lat : number
+    * lon : number
+    * rooms : number
+    * rating : number
+  }
+
+  entity "movies" as movies <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * title : string
+    * genre : string
+    * duration : number
+    * rating : string
+    * description : string
+    * posterUrl : string
+    --
+    trailerUrl : string
+    images : string[]
+  }
+
+  entity "showtimes" as showtimes <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * cinemaId : string <<FK, indexed>>
+    * movieId : string <<FK, indexed>>
+    * date : string <<indexed>>
+    * time : string
+    * room : number
+    * totalSeats : number
+    * occupiedSeats : string[]
+    * pricePerSeat : number
+  }
+
+  entity "movie_bookings" as movie_bookings <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * userId : string <<FK, indexed>>
+    * cinemaId : string <<FK>>
+    * cinemaName : string
+    * movieId : string <<FK>>
+    * movieTitle : string
+    * showtimeId : string <<FK>>
+    * date : string
+    * time : string
+    * room : number
+    * selectedSeats : string[]
+    * totalAmount : number
+    * accountId : string <<FK>>
+    * status : enum(confirmed, cancelled)
+    * createdAt : timestamp
+  }
+
+  entity "hotels" as hotels <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * name : string
+    * cityKey : string <<indexed>>
+    * lat : number
+    * lon : number
+    * stars : number
+    * rating : number
+    * priceFrom : number
+    --
+    distanceToCenterKm : number
+    amenities : string[]
+    images : string[]
+  }
+
+  entity "hotel_rooms" as hotel_rooms <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * hotelId : string <<FK, indexed>>
+    * name : string
+    * pricePerNight : number
+    * perks : string[]
+    --
+    refundable : boolean
+  }
+
+  entity "hotel_bookings" as hotel_bookings <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * status : enum(PAID, CANCELLED, COMPLETED)
+    * customerUid : string <<FK, indexed>>
+    * hotelId : string <<FK>>
+    * hotelName : string
+    * roomId : string <<FK>>
+    * roomName : string
+    --
+    * checkIn : string
+    * checkOut : string
+    * checkInDateTime : timestamp <<indexed>>
+    * checkOutDateTime : timestamp <<indexed>>
+    * nights : number
+    * guests : number
+    * rooms : number
+    * total : number
+    --
+    * transactionId : string <<FK>>
+    * createdAt : timestamp
+  }
+
+  entity "transactions_firestore" as transactions_fs <<Firestore>> {
+    * id : string <<PK>>
+    --
+    * type : string
+    * status : string
+    * userId : string <<FK, indexed>>
+    * accountId : string <<FK>>
+    * amount : number
+    * description : string
+    * createdAt : timestamp <<indexed>>
+    --
+    metadata : object
+  }
+}
+
+' ====================================================================
+' RELATIONSHIPS - RTDB
+' ====================================================================
+
+users ||--o{ accounts : "owns"
+users ||--o{ transactions : "initiates"
+users ||--o{ notifications : "receives"
+users ||--o{ savedRecipients : "saves"
+users ||--o| ekycSessions : "submits"
+users ||--o{ stripeTopups : "creates"
+
+accounts ||--o{ accountTransactions : "has history"
+accounts ||--o{ transactions : "source"
+
+transactions ||--o| transactionOtps : "requires"
+transactions ||--o{ accountTransactions : "recorded in"
+transactions ||--o{ notifications : "generates"
+
+' ====================================================================
+' RELATIONSHIPS - Firestore
+' ====================================================================
+
+cinemas ||--o{ showtimes : "hosts"
+movies ||--o{ showtimes : "scheduled in"
+showtimes ||--o{ movie_bookings : "booked for"
+
+hotels ||--o{ hotel_rooms : "offers"
+hotel_rooms ||--o{ hotel_bookings : "booked in"
+
+' ====================================================================
+' CROSS-DATABASE RELATIONSHIPS (Logical)
+' ====================================================================
+
+users ||--o{ movie_bookings : "places (FK: userId)"
+users ||--o{ hotel_bookings : "places (FK: customerUid)"
+accounts ||--o{ movie_bookings : "pays for (FK: accountId)"
+transactions ||--o{ hotel_bookings : "payment (FK: transactionId)"
+
+' ====================================================================
+' NOTES & CONSTRAINTS
+' ====================================================================
+
+note right of users
+  <b>Primary User Entity</b>
+  • Stored in RTDB for real-time updates
+  • Contains authentication & profile data
+  • Security fields for login/PIN locks
+  • eKYC status determines transaction permission
+  
+  <b>Indexes:</b>
+  • email (unique, for login)
+  • nationalId (unique, for eKYC)
+  • cif (unique, customer ID)
+end note
+
+note right of accounts
+  <b>Bank Account Entity</b>
+  • Key = accountNumber (12 digits)
+  • Balance updated atomically via transactions
+  • PIN stored for transaction verification
+  • Status can be LOCKED by system/officer
+  
+  <b>Business Rules:</b>
+  • One user can have multiple accounts
+  • Balance must be >= 0
+  • PIN required for all transactions
+end note
+
+note right of transactions
+  <b>Transaction Entity</b>
+  • Supports internal & external transfers
+  • OTP required for all transfers
+  • Biometric required if amount >= 10M VND
+  • Atomic balance updates
+  
+  <b>States:</b>
+  PENDING_OTP → PROCESSING → SUCCESS/FAILED
+  
+  <b>Types:</b>
+  • TRANSFER_INTERNAL (VietBank → VietBank)
+  • TRANSFER_EXTERNAL (VietBank → Other banks)
+  • CASH_DEPOSIT / CASH_WITHDRAW
+  • MOVIE_BOOKING / HOTEL_BOOKING
+end note
+
+note right of transactionOtps
+  <b>OTP Verification</b>
+  • 6-digit numeric code
+  • Expires after 2 minutes
+  • Max 5 attempts
+  • One-time use only
+  • Sent via email (EmailJS/Apps Script)
+end note
+
+note right of showtimes
+  <b>Movie Showtime</b>
+  • occupiedSeats updated atomically
+  • Prevents double-booking
+  • 96 seats total (8 rows × 12 seats)
+  
+  <b>Seat Format:</b>
+  ["A1", "A2", "B5", ...]
+end note
+
+note right of hotel_bookings
+  <b>Hotel Booking</b>
+  • Check-in: 14:00 (2 PM)
+  • Check-out: 12:00 (noon)
+  
+  <b>Availability Check:</b>
+  Room unavailable if:
+  requestCheckIn < existingCheckOut AND
+  requestCheckOut > existingCheckIn
+  
+  <b>Indexes:</b>
+  • customerUid (for user bookings)
+  • checkInDateTime (for availability)
+  • checkOutDateTime (for availability)
+end note
+
+note right of counters
+  <b>Auto-increment Counters</b>
+  • transactionCounter: TXN000001, TXN000002...
+  • cifCounter: CIF0001, CIF0002...
+  
+  Updated atomically via runTransaction()
+end note
+
+note bottom of externalAccounts
+  <b>External Bank Accounts</b>
+  • Simulates inter-bank transfers
+  • Key = bankName + accountNumber
+  • Used for TRANSFER_EXTERNAL
+end note
+
+' ====================================================================
+' LEGEND
+' ====================================================================
+
+legend right
+  <b>Database Types:</b>
+  <color:#2196F3>█</color> Firebase Realtime Database (RTDB)
+  <color:#FF9800>█</color> Firebase Firestore
+  
+  <b>Notation:</b>
+  * = Required field
+  <<PK>> = Primary Key
+  <<FK>> = Foreign Key
+  <<unique>> = Unique constraint
+  <<indexed>> = Database index
+  
+  <b>Relationships:</b>
+  ||--o{ = One-to-Many
+  ||--o| = One-to-Zero-or-One
+  ||--|| = One-to-One
+  
+  <b>Cardinality:</b>
+  || = Exactly one
+  |o = Zero or one
+  }o = Zero or many
+  }| = One or many
+end legend
+
+@enduml

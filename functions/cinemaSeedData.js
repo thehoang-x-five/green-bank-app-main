@@ -6,6 +6,18 @@
  * - Generates seat maps for each showtime
  */
 
+// ✅ Seeded random number generator for consistent data across machines
+function seededRandom(seed) {
+  let state = seed;
+  return function() {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+// Global seeded random instance (seed: 12345)
+const random = seededRandom(12345);
+
 // Helper to generate cinema data
 function generateCinemas() {
   const cinemas = [];
@@ -334,14 +346,14 @@ function generateShowtimes(cinemaId, movieId, cinemaRooms, cinemaName) {
     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
     
     // More showtimes on weekends
-    const numShowtimes = isWeekend ? 5 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 3);
+    const numShowtimes = isWeekend ? 5 + Math.floor(random() * 3) : 3 + Math.floor(random() * 3);
     
     // Select random times from different periods
     const selectedTimes = [];
     const allTimes = [...morningTimes, ...afternoonTimes, ...eveningTimes];
     
     for (let i = 0; i < numShowtimes; i++) {
-      const randomTime = allTimes[Math.floor(Math.random() * allTimes.length)];
+      const randomTime = allTimes[Math.floor(random() * allTimes.length)];
       if (!selectedTimes.includes(randomTime)) {
         selectedTimes.push(randomTime);
       }
@@ -350,7 +362,7 @@ function generateShowtimes(cinemaId, movieId, cinemaRooms, cinemaName) {
     selectedTimes.sort(); // Sort times chronologically
     
     for (const time of selectedTimes) {
-      const room = 1 + Math.floor(Math.random() * Math.min(cinemaRooms, 6));
+      const room = 1 + Math.floor(random() * Math.min(cinemaRooms, 6));
       const totalSeats = 96; // 8 rows x 12 seats
       
       // More occupied seats for evening shows and weekends
@@ -358,14 +370,14 @@ function generateShowtimes(cinemaId, movieId, cinemaRooms, cinemaName) {
       if (eveningTimes.includes(time)) maxOccupied = 50;
       if (isWeekend) maxOccupied += 15;
       
-      const occupiedCount = Math.floor(Math.random() * maxOccupied);
+      const occupiedCount = Math.floor(random() * maxOccupied);
       
       // Price varies by time (evening shows more expensive)
       let priceMultiplier = 1.0;
       if (eveningTimes.includes(time)) priceMultiplier = 1.2;
       if (isWeekend) priceMultiplier *= 1.15;
       
-      const basePrice = basePriceRange.min + Math.floor(Math.random() * (basePriceRange.max - basePriceRange.min));
+      const basePrice = basePriceRange.min + Math.floor(random() * (basePriceRange.max - basePriceRange.min));
       const finalPrice = Math.round(basePrice * priceMultiplier / 1000) * 1000; // Round to nearest 1000
       
       showtimes.push({
@@ -390,8 +402,8 @@ function generateOccupiedSeats(count) {
   const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
   
   while (occupied.size < count) {
-    const row = rows[Math.floor(Math.random() * rows.length)];
-    const seat = 1 + Math.floor(Math.random() * 12);
+    const row = rows[Math.floor(random() * rows.length)];
+    const seat = 1 + Math.floor(random() * 12);
     occupied.add(`${row}${seat}`);
   }
   

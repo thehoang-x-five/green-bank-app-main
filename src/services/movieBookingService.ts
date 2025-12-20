@@ -1,5 +1,5 @@
 import { fbDb, fbAuth, fbRtdb } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import {
   ref,
   get,
@@ -114,6 +114,12 @@ export async function createMovieBooking(
         : Number((acc.balance as string) || 0);
     });
   }
+
+  // ✅ Update showtime occupiedSeats BEFORE creating booking (atomic seat reservation)
+  const showtimeRef = doc(fbDb, "showtimes", params.showtimeId);
+  await updateDoc(showtimeRef, {
+    occupiedSeats: arrayUnion(...params.selectedSeats),
+  });
 
   // Create booking record in Firestore
   const bookingRef = await addDoc(collection(fbDb, "movie_bookings"), {

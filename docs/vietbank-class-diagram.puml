@@ -1,0 +1,366 @@
+@startuml VietBank - Domain Class Diagram (UML)
+
+' ====== METADATA ======
+title VietBank Digital Banking System\nDomain Class Diagram
+footer Generated: %date("yyyy-MM-dd")
+scale 1.2
+
+' ====== LAYOUT ======
+left to right direction
+skinparam linetype ortho
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam wrapWidth 260
+hide methods
+
+' ====== COLORS ======
+skinparam class {
+  BackgroundColor<<Entity>> #E8F5E9
+  BorderColor<<Entity>> #4CAF50
+  BackgroundColor<<ValueObject>> #FFF3E0
+  BorderColor<<ValueObject>> #FF9800
+}
+skinparam package {
+  BackgroundColor #F5F5F5
+  BorderColor #9E9E9E
+}
+
+' ====== DOMAIN: CORE BANKING ======
+package "Core Banking" {
+
+  class AppUserProfile <<Entity>> {
+    +uid: string {id}
+    +username: string
+    +email: string {unique}
+    +role: AppUserRole
+    +status: UserStatus
+    +ekycStatus: EkycStatus
+    +canTransact: boolean
+    +createdAt: number
+
+    +phone: string {optional}
+    +gender: string {optional}
+    +dob: string {optional}
+    +nationalId: string {optional, unique}
+    +idIssueDate: string {optional}
+    +placeOfIssue: string {optional}
+    +permanentAddress: string {optional}
+    +contactAddress: string {optional}
+    +cif: string {optional, unique}
+    +frontIdUrl: string {optional}
+    +backIdUrl: string {optional}
+    +selfieUrl: string {optional}
+  }
+
+  enum AppUserRole {
+    CUSTOMER
+    OFFICER
+  }
+
+  enum UserStatus {
+    ACTIVE
+    LOCKED
+  }
+
+  enum EkycStatus {
+    PENDING
+    VERIFIED
+    REJECTED
+  }
+
+  class BankAccount <<Entity>> {
+    +accountNumber: string {id}
+    +uid: string {fk}
+    +balance: number
+    +status: AccountStatus
+    +pin: string {optional}
+    +createdAt: number
+  }
+
+  enum AccountStatus {
+    ACTIVE
+    LOCKED
+  }
+
+  class Transaction <<Entity>> {
+    +transactionId: string {id}
+    +type: TransactionType
+    +status: TransactionStatus
+    +customerUid: string {fk}
+
+    +sourceAccountNumber: string {fk}
+    +destinationAccountNumber: string
+    +destinationName: string
+    +destinationBankName: string
+    +destinationBankCode: string
+
+    +amount: number
+    +fee: number
+    +content: string
+    +createdAt: number
+    +executedAt: number
+
+    +isInternal: boolean {optional}
+    +destAccUid: string {optional, fk}
+    +requiresBiometric: boolean {optional}
+    +biometricVerifiedAt: number {optional}
+  }
+  
+  enum TransactionType {
+    TRANSFER_INTERNAL
+    TRANSFER_EXTERNAL
+    CASH_DEPOSIT
+    CASH_WITHDRAW
+    MOVIE_BOOKING
+    HOTEL_BOOKING
+  }
+  
+  enum TransactionStatus {
+    PENDING_OTP
+    PROCESSING
+    SUCCESS
+    FAILED
+  }
+
+  class OtpData <<Entity>> {
+    +transactionId: string
+    +uid: string
+    +email: string
+    +otp: string
+    +createdAt: number
+    +expireAt: number
+    +attemptsLeft: number
+    +used: boolean
+  }
+}
+
+' ====== DOMAIN: EKYC ======
+package "eKYC" {
+  class EkycSession <<Entity>> {
+    +uid: string {optional}
+    +email: string {optional}
+    +fullName: string {optional}
+    +dob: string {optional}
+    +nationalId: string {optional}
+    +address: string {optional}
+    +gender: string {optional}
+    +idIssueDate: string {optional}
+
+    +submittedAt: number {optional}
+    +updatedAt: number {optional}
+    +status: EkycSessionStatus {optional}
+
+    +frontIdUrl: string {optional}
+    +backIdUrl: string {optional}
+    +selfieUrl: string {optional}
+
+    +approvedAt: number {optional}
+    +rejectedAt: number {optional}
+    +rejectReason: string {optional}
+    +cif: string {optional}
+  }
+
+  enum EkycSessionStatus {
+    PENDING_CUSTOMER
+    PENDING_REVIEW
+    VERIFIED
+    REJECTED
+  }
+}
+
+' ====== DOMAIN: UTILITIES - MOVIE BOOKING ======
+package "Utilities - Movie Booking" {
+
+  class Cinema <<Entity>> {
+    +id: string
+    +name: string
+    +address: string
+    +cityKey: string
+    +lat: number
+    +lon: number
+    +rooms: number
+    +rating: number
+  }
+
+  class Movie <<Entity>> {
+    +id: string
+    +title: string
+    +genre: string
+    +duration: number
+    +rating: string
+    +description: string
+    +posterUrl: string
+    +trailerUrl: string {optional}
+    +images: string[] {optional}
+  }
+
+  class Showtime <<Entity>> {
+    +id: string
+    +cinemaId: string
+    +movieId: string
+    +date: string
+    +time: string
+    +room: number
+    +totalSeats: number
+    +occupiedSeats: string[]
+    +pricePerSeat: number
+  }
+
+  class Seat <<ValueObject>> {
+    +id: string
+    +row: string
+    +number: number
+    +status: SeatStatus
+  }
+
+  enum SeatStatus {
+    available
+    occupied
+    selected
+  }
+
+  class MovieBooking <<Entity>> {
+    +id: string {id}
+    +userId: string {fk}
+    +cinemaId: string {fk}
+    +cinemaName: string
+    +movieId: string {fk}
+    +movieTitle: string
+    +showtimeId: string {fk}
+    +date: string
+    +time: string
+    +room: number
+    +selectedSeats: string[]
+    +totalAmount: number
+    +accountId: string {fk}
+    +status: BookingStatus
+    +createdAt: number
+  }
+  
+  enum BookingStatus {
+    confirmed
+    cancelled
+  }
+}
+
+' ====== DOMAIN: UTILITIES - HOTEL BOOKING ======
+package "Utilities - Hotel Booking" {
+
+  class HotelItem <<Entity>> {
+    +id: string
+    +name: string
+    +lat: number
+    +lon: number
+    +stars: number
+    +rating: number
+    +priceFrom: number
+    +distanceToCenterKm: number {optional}
+    +images: string[] {optional}
+    +cityKey: string
+  }
+
+  class HotelRoom <<Entity>> {
+    +id: string
+    +hotelId: string
+    +name: string
+    +pricePerNight: number
+    +perks: string[]
+    +refundable: boolean {optional}
+  }
+
+  class HotelBooking <<Entity>> {
+    +id: string {id}
+    +status: HotelBookingStatus
+    +customerUid: string {fk}
+    +hotelId: string {fk}
+    +hotelName: string
+    +roomId: string {fk}
+    +roomName: string
+
+    +checkIn: string
+    +checkOut: string
+    +checkInDateTime: number
+    +checkOutDateTime: number
+    +nights: number
+
+    +guests: number
+    +rooms: number
+    +total: number
+
+    +transactionId: string {fk}
+    +createdAt: number
+  }
+  
+  enum HotelBookingStatus {
+    PAID
+    CANCELLED
+    COMPLETED
+  }
+}
+
+' ==========================================================
+' ASSOCIATIONS (Multiplicities & Constraints)
+' ==========================================================
+
+' Core banking
+AppUserProfile "1" -- "0..*" BankAccount : owns >
+AppUserProfile "1" -- "0..*" Transaction : initiates >
+Transaction "1" -- "0..1" OtpData : requires >
+AppUserProfile "1" -- "0..1" EkycSession : submits >
+
+' Movie booking domain
+Cinema "1" -- "0..*" Showtime : hosts >
+Movie  "1" -- "0..*" Showtime : schedules >
+Showtime "1" *-- "96" Seat : contains >
+AppUserProfile "1" -- "0..*" MovieBooking : places >
+MovieBooking "*" -- "1" Showtime : for >
+MovieBooking "*" -- "1" Cinema : at >
+MovieBooking "*" -- "1" Movie : includes >
+MovieBooking "*" -- "1" BankAccount : paidBy >
+
+' Hotel booking domain
+HotelItem "1" *-- "1..*" HotelRoom : offers >
+HotelRoom "1" -- "0..*" HotelBooking : bookedIn >
+AppUserProfile "1" -- "0..*" HotelBooking : places >
+HotelBooking "*" -- "1" HotelItem : at >
+HotelBooking "*" -- "1" HotelRoom : reserves >
+HotelBooking "1" -- "1" Transaction : paidWith >
+
+' ==========================================================
+' NOTES & CONSTRAINTS
+' ==========================================================
+
+note right of Transaction
+  <b>Business Rules:</b>
+  • requiresBiometric = true if amount >= 10M VND
+  • OTP expires after 2 minutes
+  • Max 5 OTP attempts
+  • Atomic balance deduction
+end note
+
+note right of Showtime
+  <b>Seat Booking:</b>
+  • 8 rows (A-H) × 12 seats = 96 total
+  • occupiedSeats updated atomically
+  • Prevents double-booking
+end note
+
+note right of HotelBooking
+  <b>Room Availability:</b>
+  • Check-in: 14:00
+  • Check-out: 12:00
+  • Overlap detection:
+    checkIn < existingCheckOut AND
+    checkOut > existingCheckIn
+end note
+
+note right of AppUserProfile
+  <b>Security:</b>
+  • Login lock after 5 failed attempts
+  • PIN lock after 5 failed attempts
+  • eKYC required for transactions
+  • Biometric login supported
+end note
+
+@enduml
