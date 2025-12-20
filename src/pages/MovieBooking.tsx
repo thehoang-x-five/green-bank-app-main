@@ -493,10 +493,10 @@ export default function MovieBooking() {
       const { requireBiometricForHighValueVnd } = await import("@/services/biometricService");
       const biometricResult = await requireBiometricForHighValueVnd(totalAmount);
       
-      if (biometricResult !== "ok") {
-        if (biometricResult === "cancelled") {
+      if (!biometricResult.success) {
+        if (biometricResult.code === "cancelled") {
           toast.error("Bạn đã hủy xác thực sinh trắc");
-        } else if (biometricResult === "unavailable") {
+        } else if (biometricResult.code === "unavailable") {
           toast.error("Thiết bị không hỗ trợ xác thực sinh trắc");
         } else {
           toast.error("Xác thực sinh trắc thất bại");

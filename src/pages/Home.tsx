@@ -188,7 +188,7 @@ const Home = () => {
       {/* Utilities Section */}
       <div className="p-6">
         <h3 className="text-lg font-semibold mb-4 text-foreground">Tiện ích</h3>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {utilities.map((utility, index) => {
             const Icon = utility.icon;
             return (

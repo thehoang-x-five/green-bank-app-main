@@ -407,7 +407,7 @@ export default function HotelBooking() {
     const total = totalPrice;
     if (total >= 10_000_000) {
       const biometric = await requireBiometricForHighValueVnd(total);
-      if (biometric !== "ok") {
+      if (!biometric.success) {
         toast.error("Cần xác thực vân tay/FaceID cho giao dịch >= 10 triệu");
         return;
       }
