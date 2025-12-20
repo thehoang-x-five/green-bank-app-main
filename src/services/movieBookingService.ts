@@ -49,7 +49,9 @@ export async function createMovieBooking(
   // Get user profile
   const profile = await getCurrentUserProfile();
   if (!profile) {
-    throw new Error("Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại.");
+    throw new Error(
+      "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại."
+    );
   }
 
   // Check account status
@@ -66,7 +68,9 @@ export async function createMovieBooking(
 
   // Check transaction permission
   if (!profile.canTransact) {
-    throw new Error("Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng.");
+    throw new Error(
+      "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+    );
   }
 
   // Handle account transaction in Realtime Database
@@ -94,10 +98,14 @@ export async function createMovieBooking(
         return current; // Abort transaction
       }
       if (acc.status === "LOCKED") {
-        throw new Error("Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng.");
+        throw new Error(
+          "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+        );
       }
       const balance =
-        typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+        typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
       if (balance < params.totalAmount) {
         throw new Error(
           `Số dư không đủ. Cần ${params.totalAmount.toLocaleString(

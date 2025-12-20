@@ -1,9 +1,19 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, CheckCircle2, Download, Share2, Ticket } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  Share2,
+  Ticket,
+} from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import {
+  downloadReceiptPdf,
+  downloadReceiptHtml,
+} from "@/services/receiptPdfService";
 
 import type { UtilityFlow, UtilityResultState } from "./utilities/utilityTypes";
 
@@ -44,11 +54,52 @@ const UtilityReceipt = () => {
   const source: ReceiptSource = location.state?.source ?? "home";
 
   const handleDownload = () => {
-    toast.success("Đã tải biên lai giao dịch (demo)");
+    try {
+      // Use print dialog to save as PDF
+      downloadReceiptPdf(data);
+      toast.success("Đang mở cửa sổ in biên lai. Bạn có thể lưu thành PDF.");
+    } catch (error) {
+      console.error("Download error:", error);
+      // Fallback to HTML download
+      try {
+        downloadReceiptHtml(data);
+        toast.success("Đã tải biên lai dạng HTML");
+      } catch (fallbackError) {
+        console.error("Fallback download error:", fallbackError);
+        toast.error("Không thể tải biên lai. Vui lòng thử lại.");
+      }
+    }
   };
 
   const handleShare = () => {
-    toast.success("Đang chia sẻ biên lai (demo)");
+    // Check if Web Share API is available
+    if (navigator.share) {
+      navigator
+        .share({
+          title: `Biên lai giao dịch - ${data.transactionId}`,
+          text: `${data.title}\nSố tiền: ${data.amount} VND\nMã GD: ${data.transactionId}`,
+        })
+        .then(() => {
+          toast.success("Đã chia sẻ biên lai");
+        })
+        .catch((error) => {
+          if (error.name !== "AbortError") {
+            console.error("Share error:", error);
+            toast.error("Không thể chia sẻ");
+          }
+        });
+    } else {
+      // Fallback: Copy to clipboard
+      const shareText = `${data.title}\nSố tiền: ${data.amount} VND\nMã giao dịch: ${data.transactionId}\nThời gian: ${data.time}`;
+      navigator.clipboard
+        .writeText(shareText)
+        .then(() => {
+          toast.success("Đã sao chép thông tin giao dịch");
+        })
+        .catch(() => {
+          toast.error("Không thể sao chép");
+        });
+    }
   };
 
   const handleBack = () => {
@@ -88,7 +139,7 @@ const UtilityReceipt = () => {
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto w-full max-w-3xl px-4 -mt-6 space-y-4">
+      <div className="relative z-10 mx-auto w-full max-w-3xl px-4 pt-6 space-y-4">
         <Card className="relative overflow-hidden border-none bg-white/95 shadow-lg">
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-600" />
           <div className="flex flex-col gap-4 p-6">
@@ -98,7 +149,9 @@ const UtilityReceipt = () => {
                 <p className="text-3xl font-bold text-foreground">
                   {data.amount} VND
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">{data.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {data.title}
+                </p>
               </div>
               <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-emerald-700">
                 <CheckCircle2 className="h-5 w-5" />

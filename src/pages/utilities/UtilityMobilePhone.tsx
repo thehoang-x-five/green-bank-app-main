@@ -13,14 +13,6 @@ export default function UtilityMobilePhone({
   onGo3G4G,
   onGoData4G,
 }: Props) {
-  // ✅ demo list “Gần đây” giống ảnh (không subtitle ở chỗ giá)
-  const recents = Array.from({ length: 5 }).map((_, idx) => ({
-    id: idx + 1,
-    title: "Nạp tiền điện thoại",
-    phone: "0862525038",
-    amount: "10 000 đ",
-  }));
-
   return (
     <div id="utility-mobilephone-screen" className="space-y-6">
       {/* ✅ [PATCH-MOBILEPHONE-LAYOUT-3COL] 3 ô cùng 1 hàng, căn đều */}
@@ -51,32 +43,6 @@ export default function UtilityMobilePhone({
             <p className="mt-3 font-semibold">Data 4G/Nạp tiền</p>
           </Card>
         </button>
-      </div>
-
-      {/* ✅ [PATCH-RECENT-AMOUNT-GREEN] đổi màu số tiền sang xanh lá */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Gần đây</h3>
-
-        <div className="space-y-3">
-          {recents.map((r) => (
-            <Card key={r.id} className="p-4 rounded-2xl">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full border bg-background flex items-center justify-center">
-                    <span className="text-emerald-700 font-bold">VI</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold">{r.title}</p>
-                    <p className="text-sm text-muted-foreground">{r.phone}</p>
-                  </div>
-                </div>
-
-                {/* ✅ chỉ số tiền, không subtitle */}
-                <p className="font-semibold text-emerald-800">{r.amount}</p>
-              </div>
-            </Card>
-          ))}
-        </div>
       </div>
     </div>
   );

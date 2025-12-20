@@ -1,5 +1,4 @@
 // src/pages/UtilityBills.tsx
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
@@ -30,12 +29,22 @@ import UtilityDataPack from "./utilities/UtilityDataPack";
 import UtilityFlight from "./utilities/UtilityFlight";
 import UtilityMovie from "./utilities/UtilityMovie";
 import UtilityHotel from "./utilities/UtilityHotel";
+import { createFlightOrder } from "@/services/flightBookingService";
+import { fbAuth, fbRtdb } from "@/lib/firebase";
+import { ref, get } from "firebase/database";
 
 type UtilityEntry = "home" | "bill" | "mobileBill" | "mobile3g4g";
 
 type FlightUiHandle = {
   goBack: () => boolean;
 };
+
+interface Account {
+  id: string;
+  accountNumber: string;
+  accountType: string;
+  balance: number;
+}
 
 export default function UtilityBills() {
   const navigate = useNavigate();
@@ -48,9 +57,18 @@ export default function UtilityBills() {
 
   const [currentType, setCurrentType] = useState<UtilityType>(routeType);
   const [billService, setBillService] = useState<BillService | null>(null);
-  const [billSave, setBillSave] = useState(false);
 
   const initTelco = detectTelcoByPhone(MOCK_USER_PHONE);
+
+  // ✅ [FLIGHT-PAYMENT] State for flight payment
+  const [showFlightPaymentModal, setShowFlightPaymentModal] = useState(false);
+  const [selectedFlightForPayment, setSelectedFlightForPayment] =
+    useState<FlightOption | null>(null);
+  const [flightAccounts, setFlightAccounts] = useState<Account[]>([]);
+  const [selectedFlightAccountId, setSelectedFlightAccountId] =
+    useState<string>("");
+  const [loadingFlightAccounts, setLoadingFlightAccounts] = useState(false);
+  const [processingFlightPayment, setProcessingFlightPayment] = useState(false);
 
   const [formData, setFormData] = useState<UtilityFormData>({
     billType: "",
@@ -157,6 +175,114 @@ export default function UtilityBills() {
     navigate("/home");
   };
 
+  // ✅ [FLIGHT-PAYMENT] Load accounts for flight payment
+  const loadFlightAccounts = async () => {
+    const user = fbAuth.currentUser;
+    if (!user) {
+      toast.error("Vui lòng đăng nhập");
+      navigate("/login");
+      return;
+    }
+
+    setLoadingFlightAccounts(true);
+    try {
+      const accountsRef = ref(fbRtdb, "accounts");
+      const snap = await get(accountsRef);
+
+      if (!snap.exists()) {
+        setFlightAccounts([]);
+        toast.error("Bạn chưa có tài khoản thanh toán");
+        setLoadingFlightAccounts(false);
+        return;
+      }
+
+      const accountList: Account[] = [];
+      snap.forEach((child) => {
+        const v = child.val();
+        if (v?.uid === user.uid) {
+          const balance =
+            typeof v.balance === "number" ? v.balance : Number(v.balance || 0);
+          accountList.push({
+            id: child.key ?? "",
+            accountNumber: child.key ?? "",
+            accountType: v.accountType || "Tài khoản thanh toán",
+            balance: balance,
+          });
+        }
+        return false;
+      });
+
+      setFlightAccounts(accountList);
+
+      if (accountList.length === 0) {
+        toast.error("Bạn chưa có tài khoản thanh toán");
+      } else {
+        // Auto-select first account
+        setSelectedFlightAccountId(accountList[0].id);
+      }
+    } catch (error) {
+      console.error("Error loading flight accounts:", error);
+      toast.error("Không thể tải danh sách tài khoản");
+    } finally {
+      setLoadingFlightAccounts(false);
+    }
+  };
+
+  // ✅ [FLIGHT-PAYMENT] Handle flight payment
+  const handleFlightPayment = async () => {
+    if (!selectedFlightForPayment) {
+      toast.error("Thông tin chuyến bay không đầy đủ");
+      return;
+    }
+
+    if (!selectedFlightAccountId) {
+      toast.error("Vui lòng chọn tài khoản thanh toán");
+      return;
+    }
+
+    setProcessingFlightPayment(true);
+    try {
+      const result = await createFlightOrder({
+        selectedFlight: selectedFlightForPayment,
+        formData,
+        accountId: selectedFlightAccountId,
+      });
+
+      toast.success("Đặt vé máy bay thành công!");
+
+      // Navigate to result page with full booking info
+      const receiptResult = buildFlightReceipt({
+        selectedFlight: selectedFlightForPayment,
+        formData,
+      });
+
+      navigate("/utilities/result", {
+        state: {
+          result: {
+            ...receiptResult,
+            transactionId: result.transactionId,
+            details: [
+              ...receiptResult.details,
+              { label: "Mã đặt vé", value: result.orderId },
+              { label: "Mã giao dịch", value: result.transactionId },
+            ],
+          },
+          source: "home",
+        },
+      });
+    } catch (error) {
+      console.error("Flight payment error:", error);
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error("Thanh toán thất bại");
+      }
+    } finally {
+      setProcessingFlightPayment(false);
+      setShowFlightPaymentModal(false);
+    }
+  };
+
   const headerMeta = (() => {
     switch (currentType) {
       case "mobilePhone":
@@ -205,26 +331,25 @@ export default function UtilityBills() {
 
     if (currentType === "bill") {
       if (!billService) return;
-      const result = buildBillReceipt({ billService, billSave, formData });
+      const result = buildBillReceipt({ billService, formData });
       navigate("/utilities/result", { state: { result, source: "home" } });
       return;
     }
 
-    if (currentType === "phone") {
-      const result = buildPhoneReceipt(formData);
-      navigate("/utilities/result", { state: { result, source: "home" } });
-      return;
-    }
-
-    if (currentType === "data") {
-      const result = buildDataReceipt(formData);
-      navigate("/utilities/result", { state: { result, source: "home" } });
+    // Phone and data types are now handled by their respective components
+    // with payment modals, so we don't need to handle submit here
+    if (currentType === "phone" || currentType === "data") {
+      // Payment is handled in UtilityPhoneTopup and UtilityDataPack components
       return;
     }
 
     if (currentType === "movie") {
       if (movieStep === 1) {
-        const isReady = formData.movieCinema && formData.movieName && formData.movieDate && formData.movieTime;
+        const isReady =
+          formData.movieCinema &&
+          formData.movieName &&
+          formData.movieDate &&
+          formData.movieTime;
         if (!isReady) {
           toast.error("Vui lòng nhập đầy đủ thông tin vé xem phim");
           return;
@@ -245,7 +370,8 @@ export default function UtilityBills() {
 
     if (currentType === "hotel") {
       if (hotelStep === 1) {
-        const isReady = formData.hotelCity && formData.hotelCheckIn && formData.hotelCheckOut;
+        const isReady =
+          formData.hotelCity && formData.hotelCheckIn && formData.hotelCheckOut;
         if (!isReady) {
           toast.error("Vui lòng nhập đủ thành phố và ngày nhận / trả phòng");
           return;
@@ -258,7 +384,10 @@ export default function UtilityBills() {
         return;
       }
       if (hotelStep === 3) {
-        const room = selectedHotelRoom || { name: "Phòng tiêu chuẩn", price: 850000 };
+        const room = selectedHotelRoom || {
+          name: "Phòng tiêu chuẩn",
+          price: 850000,
+        };
         const result = buildHotelReceipt(formData, {
           nights: 1,
           roomName: room.name,
@@ -278,11 +407,17 @@ export default function UtilityBills() {
           setFormData={setFormData}
           billService={billService}
           setBillService={setBillService}
-          billSave={billSave}
-          setBillSave={setBillSave}
           onGoMobilePhone={() => {
             goToType("mobilePhone", { state: { entry: "bill" } });
             setBillService("mobile");
+          }}
+          onPaymentSuccess={() => {
+            // Navigate to result page after successful payment
+            if (!billService) return;
+            const result = buildBillReceipt({ billService, formData });
+            navigate("/utilities/result", {
+              state: { result, source: "home" },
+            });
           }}
         />
       );
@@ -295,7 +430,9 @@ export default function UtilityBills() {
             onGoTopup={() =>
               goToType("phone", { state: { entry: "mobileBill" } })
             }
-            onGo3G4G={() => goToType("data", { state: { entry: "mobile3g4g" } })}
+            onGo3G4G={() =>
+              goToType("data", { state: { entry: "mobile3g4g" } })
+            }
             onGoData4G={() =>
               goToType("data", { state: { entry: "mobileBill" } })
             }
@@ -320,11 +457,11 @@ export default function UtilityBills() {
           ref={flightUiRef}
           formData={formData}
           setFormData={setFormData}
-          onConfirm={(selectedFlight) => {
-            const result = buildFlightReceipt({ selectedFlight, formData });
-            navigate("/utilities/result", {
-              state: { result, source: "home" },
-            });
+          onConfirm={async (selectedFlight) => {
+            // ✅ [FLIGHT-PAYMENT] Show payment modal instead of direct navigation
+            setSelectedFlightForPayment(selectedFlight);
+            setShowFlightPaymentModal(true);
+            await loadFlightAccounts();
           }}
         />
       );
@@ -444,17 +581,144 @@ export default function UtilityBills() {
         </Card>
       </div>
 
-      {/* Sticky bottom button */}
-      {(currentType === "phone" || (currentType === "data" && isMua3G4G)) && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t">
-          <div className="max-w-4xl mx-auto px-4 py-3">
-            <Button
-              form="utility-main-form"
-              type="submit"
-              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700"
-            >
-              Tiếp tục
-            </Button>
+      {/* Sticky bottom button - removed as payment is now handled in components */}
+
+      {/* ✅ [FLIGHT-PAYMENT] Payment Modal */}
+      {showFlightPaymentModal && selectedFlightForPayment && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40">
+          <div className="bg-background w-full rounded-t-2xl p-6 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Xác nhận thanh toán</h2>
+              <button
+                type="button"
+                className="text-sm text-muted-foreground"
+                onClick={() => setShowFlightPaymentModal(false)}
+              >
+                Đóng
+              </button>
+            </div>
+
+            {/* Flight Info Summary */}
+            <div className="space-y-2 rounded-xl border p-3 text-sm mb-4">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Hãng hàng không</span>
+                <span className="font-semibold">
+                  {selectedFlightForPayment.airline}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Chuyến bay</span>
+                <span className="font-semibold">
+                  {selectedFlightForPayment.code}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Hành trình</span>
+                <span className="font-semibold">
+                  {selectedFlightForPayment.fromCode} →{" "}
+                  {selectedFlightForPayment.toCode}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Ngày bay</span>
+                <span className="font-semibold">{formData.flightDate}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Hành khách</span>
+                <span className="font-semibold">
+                  {formData.flightAdult} NL, {formData.flightChild} TE,{" "}
+                  {formData.flightInfant} EB
+                </span>
+              </div>
+              <div className="border-t pt-2 flex items-center justify-between text-base font-bold text-primary">
+                <span>Tổng thanh toán</span>
+                <span>
+                  {(
+                    selectedFlightForPayment.price *
+                    Math.max(
+                      (parseInt(formData.flightAdult || "0") || 0) +
+                        (parseInt(formData.flightChild || "0") || 0) +
+                        (parseInt(formData.flightInfant || "0") || 0),
+                      1
+                    )
+                  ).toLocaleString("vi-VN")}{" "}
+                  ₫
+                </span>
+              </div>
+            </div>
+
+            {/* Account Selection */}
+            <div className="space-y-2 flex-1 overflow-y-auto">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Tài khoản nguồn
+              </p>
+              {loadingFlightAccounts && (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="h-16 bg-gray-200 rounded"></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!loadingFlightAccounts && flightAccounts.length > 0 && (
+                <div className="space-y-2">
+                  {flightAccounts.map((account) => (
+                    <button
+                      key={account.id}
+                      type="button"
+                      className={`w-full rounded-xl border p-3 text-left transition ${
+                        selectedFlightAccountId === account.id
+                          ? "border-primary bg-primary/5"
+                          : "border-muted hover:border-primary/50"
+                      }`}
+                      onClick={() => setSelectedFlightAccountId(account.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-mono font-semibold">
+                            {account.accountNumber}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {account.accountType}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-primary">
+                            {account.balance.toLocaleString("vi-VN")} ₫
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!loadingFlightAccounts && flightAccounts.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Chưa có tài khoản thanh toán
+                </p>
+              )}
+            </div>
+
+            {/* Payment Button */}
+            <div className="flex gap-3 mt-4 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => setShowFlightPaymentModal(false)}
+                className="flex-1"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={handleFlightPayment}
+                disabled={!selectedFlightAccountId || processingFlightPayment}
+                className="flex-1"
+              >
+                {processingFlightPayment ? "Đang xử lý..." : "Thanh toán"}
+              </Button>
+            </div>
           </div>
         </div>
       )}

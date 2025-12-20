@@ -2,9 +2,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useUserAccount } from "@/hooks/useUserAccount";
 
 import type { BillService, UtilityFormData } from "./utilityTypes";
+import {
+  fetchBillProviders,
+  fetchUserUtilityBill,
+  payUserUtilityBill,
+  type BillProvider,
+  type UserUtilityBill,
+  type UtilityBillServiceType,
+} from "@/services/utilityBillService";
 
 type Props = {
   formData: UtilityFormData;
@@ -13,10 +22,8 @@ type Props = {
   billService: BillService | null;
   setBillService: React.Dispatch<React.SetStateAction<BillService | null>>;
 
-  billSave: boolean;
-  setBillSave: React.Dispatch<React.SetStateAction<boolean>>;
-
   onGoMobilePhone: () => void;
+  onPaymentSuccess?: () => void;
 };
 
 const ELECTRIC_PROVIDERS = [
@@ -48,24 +55,120 @@ export default function UtilityBill({
   setFormData,
   billService,
   setBillService,
-  billSave,
-  setBillSave,
   onGoMobilePhone,
+  onPaymentSuccess,
 }: Props) {
   const [showBillProviderSheet, setShowBillProviderSheet] = useState(false);
   const [billProviderSearch, setBillProviderSearch] = useState("");
+  const [showProviderError, setShowProviderError] = useState(false);
+  const { account, userProfile } = useUserAccount();
+
+  const [providersFromDb, setProvidersFromDb] = useState<BillProvider[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
+  const [activeBill, setActiveBill] = useState<UserUtilityBill | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
+
+  const billServiceForDb = useMemo(() => {
+    if (billService === "electric") return "electric";
+    if (billService === "water") return "water";
+    return null;
+  }, [billService]);
+
+  // Reset billProvider & bill info when changing service
+  useEffect(() => {
+    if (!billService) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      billProvider: "",
+      customerCode: "",
+      billAmount: "",
+    }));
+    setSelectedProviderId("");
+    setActiveBill(null);
+    setShowProviderError(false);
+    setBillProviderSearch("");
+    setProvidersFromDb([]);
+  }, [billService, setFormData]);
+
+  // Load providers from DB for electric/water
+  useEffect(() => {
+    const run = async () => {
+      if (!billServiceForDb) return;
+
+      const list = await fetchBillProviders(
+        billServiceForDb as UtilityBillServiceType
+      );
+      setProvidersFromDb(list);
+    };
+
+    run();
+  }, [billServiceForDb]);
+
+  // Load user's active bill when select provider
+  useEffect(() => {
+    const run = async () => {
+      if (!billServiceForDb) return;
+      if (!selectedProviderId) return;
+
+      const bill = await fetchUserUtilityBill(
+        billServiceForDb as UtilityBillServiceType,
+        selectedProviderId
+      );
+
+      if (bill && bill.status === "UNPAID" && bill.amount > 0) {
+        setActiveBill(bill);
+
+        setFormData((prev) => ({
+          ...prev,
+          customerCode: userProfile?.cif || "",
+          billAmount: String(bill.amount),
+        }));
+        return;
+      }
+
+      setActiveBill(null);
+      setFormData((prev) => ({
+        ...prev,
+        customerCode: "",
+        billAmount: "",
+      }));
+    };
+
+    run();
+  }, [billServiceForDb, selectedProviderId, setFormData, userProfile?.cif]);
 
   const providers = useMemo(() => {
     if (!billService) return [];
-    if (billService === "electric") return ELECTRIC_PROVIDERS;
-    if (billService === "water") return WATER_PROVIDERS;
+    if (billService === "electric") {
+      return providersFromDb.length > 0
+        ? providersFromDb.map((p) => p.name)
+        : ELECTRIC_PROVIDERS;
+    }
+    if (billService === "water") {
+      return providersFromDb.length > 0
+        ? providersFromDb.map((p) => p.name)
+        : WATER_PROVIDERS;
+    }
     return MOBILE_PROVIDERS;
-  }, [billService]);
+  }, [billService, providersFromDb]);
+
+  const providerNameToId = useMemo(() => {
+    const map = new Map<string, string>();
+    providersFromDb.forEach((p) => map.set(p.name, p.id));
+    return map;
+  }, [providersFromDb]);
 
   const filteredProviders = useMemo(() => {
     const keyword = billProviderSearch.trim().toLowerCase();
     return providers.filter((p) => p.toLowerCase().includes(keyword));
   }, [providers, billProviderSearch]);
+
+  const hasActiveBill = useMemo(() => {
+    return Boolean(
+      activeBill && activeBill.status === "UNPAID" && activeBill.amount > 0
+    );
+  }, [activeBill]);
 
   const renderBillProviderSheet = () => {
     if (!showBillProviderSheet || !billService) return null;
@@ -103,6 +206,7 @@ export default function UtilityBill({
                 className="w-full text-left py-2 px-1 rounded-lg hover:bg-muted/70"
                 onClick={() => {
                   setFormData((prev) => ({ ...prev, billProvider: name }));
+                  setSelectedProviderId(providerNameToId.get(name) || "");
                   setShowBillProviderSheet(false);
                   setBillProviderSearch("");
                 }}
@@ -159,24 +263,6 @@ export default function UtilityBill({
           </button>
         </div>
       </section>
-
-      <section>
-        <h2 className="text-base font-semibold mb-3">Danh sách hóa đơn</h2>
-
-        <div className="flex mb-3">
-          <button
-            type="button"
-            className="px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold"
-          >
-            Đã lưu
-          </button>
-        </div>
-
-        <Card className="p-4 text-sm text-muted-foreground">
-          Chưa có hóa đơn đã lưu (demo). Hóa đơn anh thanh toán và chọn “Lưu hóa
-          đơn” sẽ được hiển thị tại đây.
-        </Card>
-      </section>
     </div>
   );
 
@@ -189,9 +275,13 @@ export default function UtilityBill({
           <h3 className="text-sm font-semibold">Tài khoản nguồn</h3>
           <Card className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-base font-semibold">559 807 đ</p>
+              <p className="text-base font-semibold">
+                {account
+                  ? `${account.balance.toLocaleString("vi-VN")} đ`
+                  : "0 đ"}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Normal Account | 0862525038
+                Normal Account | {account?.accountNumber || "0862525038"}
               </p>
             </div>
             <span className="text-xs text-primary font-semibold">Thay đổi</span>
@@ -202,63 +292,121 @@ export default function UtilityBill({
           <h3 className="text-sm font-semibold">Thông tin thanh toán</h3>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Nhà cung cấp</Label>
+            <Label className="text-xs">
+              Nhà cung cấp <span className="text-destructive">*</span>
+            </Label>
             <button
               type="button"
-              onClick={() => setShowBillProviderSheet(true)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60"
+              onClick={() => {
+                setShowBillProviderSheet(true);
+                setShowProviderError(false);
+              }}
+              className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm flex flex-col gap-0.5 hover:bg-muted/60 ${
+                showProviderError && !formData.billProvider
+                  ? "border-destructive bg-destructive/5"
+                  : "border-input bg-background"
+              }`}
             >
               {formData.billProvider ? (
                 <span className="font-medium text-foreground">
                   {formData.billProvider}
                 </span>
               ) : (
-                <span className="text-muted-foreground">Chọn nhà cung cấp</span>
+                <span
+                  className={
+                    showProviderError
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }
+                >
+                  Chọn nhà cung cấp
+                </span>
               )}
             </button>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">
-              Mã khách hàng <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="Nhập mã khách hàng"
-              value={formData.customerCode}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  customerCode: e.target.value,
-                }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <div>
-              <p className="text-sm font-medium">Lưu hóa đơn</p>
-              <p className="text-[11px] text-muted-foreground">
-                Lưu thông tin để thanh toán nhanh cho lần sau
+            {showProviderError && !formData.billProvider && (
+              <p className="text-xs text-destructive">
+                Vui lòng chọn nhà cung cấp
               </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setBillSave((prev) => !prev)}
-              className={`w-11 h-6 rounded-full flex items-center px-1 transition-colors ${
-                billSave ? "bg-emerald-500" : "bg-muted"
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                  billSave ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
+            )}
+            {formData.billProvider && !hasActiveBill && (
+              <p className="text-xs text-amber-600">
+                Bạn không có hóa đơn cần thanh toán tại nhà cung cấp này
+              </p>
+            )}
           </div>
+
+          {hasActiveBill && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Mã khách hàng <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                placeholder="Mã khách hàng"
+                value={userProfile?.cif || formData.customerCode || ""}
+                disabled
+                className="bg-muted/50 cursor-not-allowed"
+              />
+            </div>
+          )}
+
+          {hasActiveBill && formData.billAmount && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Số tiền cần thanh toán</Label>
+              <Card className="p-3 bg-muted/30">
+                <p className="text-lg font-bold text-foreground">
+                  {Number(formData.billAmount || 0).toLocaleString("vi-VN")} đ
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {billService === "electric"
+                    ? "Hóa đơn tiền điện"
+                    : "Hóa đơn tiền nước"}{" "}
+                  tháng {new Date().getMonth() + 1}/{new Date().getFullYear()}
+                </p>
+              </Card>
+            </div>
+          )}
         </section>
 
-        <Button type="submit" className="w-full mt-4">
-          Tiếp tục
+        <Button
+          type="button"
+          disabled={isPaying}
+          className="w-full mt-4"
+          onClick={async (e) => {
+            if (!formData.billProvider) {
+              e.preventDefault();
+              setShowProviderError(true);
+              return;
+            }
+
+            if (!hasActiveBill || !billServiceForDb || !selectedProviderId) {
+              e.preventDefault();
+              return;
+            }
+
+            e.preventDefault();
+            setIsPaying(true);
+
+            try {
+              await payUserUtilityBill({
+                service: billServiceForDb as UtilityBillServiceType,
+                providerId: selectedProviderId,
+                accountId: account?.accountNumber || "DEMO",
+              });
+
+              setIsPaying(false);
+
+              // Call parent callback to navigate to result page
+              if (onPaymentSuccess) {
+                onPaymentSuccess();
+              }
+            } catch (error) {
+              setIsPaying(false);
+              // Error will be shown by the service
+              console.error("Payment failed:", error);
+            }
+          }}
+        >
+          {isPaying ? "Đang xử lý..." : "Tiếp tục"}
         </Button>
 
         {renderBillProviderSheet()}

@@ -2,12 +2,12 @@ import { firebaseRtdb, firebaseAuth } from "@/lib/firebase";
 import {
   get,
   ref,
-  child,
   set,
   push,
   runTransaction,
-  serverTimestamp,
+  serverTimestamp as rtdbServerTimestamp,
 } from "firebase/database";
+import { getCurrentUserProfile } from "./userService";
 
 import type {
   FlightOption,
@@ -17,11 +17,6 @@ import type {
 // ✅ [PATCH - NEW]
 // Dùng chung type với UI để đảm bảo shape dữ liệu location
 import type { LocationOption } from "@/pages/utilities/utilityTypes";
-
-function getUidForOrder(): string {
-  // Demo: nếu có login thì dùng uid, không có thì dùng "guest"
-  return firebaseAuth.currentUser?.uid ?? "guest";
-}
 
 /**
  * ✅ [PATCH - NEW]
@@ -74,7 +69,7 @@ export async function upsertRecentLocation(params: {
     ...params.location,
     code,
     ts: Date.now(),
-    tsServer: serverTimestamp(),
+    tsServer: rtdbServerTimestamp(),
   });
 }
 
@@ -227,14 +222,124 @@ export async function searchFlightsFromInventoryWithAvailability(params: {
 export async function createFlightOrder(params: {
   selectedFlight: FlightOption;
   formData: UtilityFormData;
+  accountId: string;
 }): Promise<{
   uid: string;
   orderId: string;
   orderNo: number;
   createdAtIso: string;
+  bookingId: string;
+  transactionId: string;
 }> {
-  const uid = getUidForOrder();
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  const { selectedFlight, formData, accountId } = params;
+
+  // Validate flight selection
+  if (!selectedFlight) {
+    throw new Error("Vui lòng chọn chuyến bay");
+  }
+
+  // Validate account selection
+  if (!accountId) {
+    throw new Error("Vui lòng chọn tài khoản thanh toán");
+  }
+
+  // Validate passengers
+  const paxAdults = parseInt((formData as any).flightAdult || "0", 10) || 0;
+  const paxChildren = parseInt((formData as any).flightChild || "0", 10) || 0;
+  const paxInfants = parseInt((formData as any).flightInfant || "0", 10) || 0;
+  const paxTotal = paxAdults + paxChildren + paxInfants;
+
+  if (paxTotal < 1) {
+    throw new Error("Vui lòng chọn ít nhất một hành khách");
+  }
+
+  // Get user profile
+  const profile = await getCurrentUserProfile();
+  if (!profile) {
+    throw new Error(
+      "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại."
+    );
+  }
+
+  // Check account status
+  if (profile.status === "LOCKED") {
+    throw new Error("Tài khoản đăng nhập đang bị khóa, không thể giao dịch");
+  }
+
+  // Check eKYC status
+  if (profile.ekycStatus !== "VERIFIED") {
+    throw new Error(
+      "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+    );
+  }
+
+  // Check transaction permission
+  if (!profile.canTransact) {
+    throw new Error(
+      "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+    );
+  }
+
+  // Calculate total amount
+  const totalAmount = (selectedFlight.price ?? 0) * Math.max(paxTotal, 1);
+
+  // Handle account transaction in Realtime Database
+  let balanceAfter = 0;
+  if (accountId && accountId !== "DEMO") {
+    const accountRef = ref(firebaseRtdb, `accounts/${accountId}`);
+
+    // Check if account exists first
+    const accountSnap = await get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("Không tìm thấy tài khoản thanh toán");
+    }
+
+    const accountData = accountSnap.val() as Record<string, unknown>;
+
+    // Verify account ownership
+    if (accountData.uid !== user.uid) {
+      throw new Error("Bạn không có quyền sử dụng tài khoản này");
+    }
+
+    // Run transaction to deduct balance
+    balanceAfter = await runTransaction(accountRef, (current) => {
+      const acc = current as Record<string, unknown> | null;
+      if (!acc) {
+        return current; // Abort transaction
+      }
+      if (acc.status === "LOCKED") {
+        throw new Error(
+          "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+        );
+      }
+      const balance =
+        typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
+      if (balance < totalAmount) {
+        throw new Error(
+          `Số dư không đủ. Cần ${totalAmount.toLocaleString(
+            "vi-VN"
+          )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+        );
+      }
+      return { ...acc, balance: balance - totalAmount };
+    }).then((res) => {
+      if (!res.committed) throw new Error("Giao dịch thất bại");
+      const acc = res.snapshot.val() as Record<string, unknown>;
+      return typeof acc.balance === "number"
+        ? acc.balance
+        : Number((acc.balance as string) || 0);
+    });
+  }
+
   const createdAtIso = new Date().toISOString();
+  const createdAtTimestamp = Date.now();
 
   // 1) Tăng counter để tạo mã đơn tăng dần
   const counterRef = ref(firebaseRtdb, "counters/flightOrder");
@@ -246,21 +351,72 @@ export async function createFlightOrder(params: {
   const orderNo = (tx.snapshot.val() as number) ?? 1;
   const orderId = `FO${String(orderNo).padStart(6, "0")}`;
 
-  const { selectedFlight, formData } = params;
+  // Create transaction record in Realtime Database
+  const txnRef = push(ref(firebaseRtdb, `flightTransactions`));
+  const transactionId = txnRef.key!;
 
-  const paxAdults = parseInt((formData as any).flightAdult || "0", 10) || 0;
-  const paxChildren = parseInt((formData as any).flightChild || "0", 10) || 0;
-  const paxInfants = parseInt((formData as any).flightInfant || "0", 10) || 0;
-  const paxTotal = paxAdults + paxChildren + paxInfants;
+  await set(txnRef, {
+    transactionId,
+    userId: user.uid,
+    accountId: accountId,
+    type: "FLIGHT_BOOKING",
+    amount: totalAmount,
+    description: `Đặt vé máy bay: ${selectedFlight.airline} ${selectedFlight.code}`,
+    status: "SUCCESS",
+    orderId,
+    airline: selectedFlight.airline,
+    flightCode: selectedFlight.code,
+    route: `${selectedFlight.fromCode} → ${selectedFlight.toCode}`,
+    departDate: formData.flightDate,
+    departTime: selectedFlight.departTime,
+    arriveTime: selectedFlight.arriveTime,
+    passengers: {
+      adults: paxAdults,
+      children: paxChildren,
+      infants: paxInfants,
+    },
+    cabin: selectedFlight.cabin,
+    createdAt: createdAtTimestamp,
+    createdAtServer: rtdbServerTimestamp(),
+  });
 
-  const amount = (selectedFlight.price ?? 0) * Math.max(paxTotal, 1);
+  // Create booking record in Realtime Database
+  const bookingRef = push(ref(firebaseRtdb, `flightBookings`));
+  const bookingId = bookingRef.key!;
 
-  // 2) Ghi đơn vào flightOrdersByUser/{uid}/{orderId}
-  const orderPath = `flightOrdersByUser/${uid}/${orderId}`;
+  await set(bookingRef, {
+    bookingId,
+    userId: user.uid,
+    flightId: selectedFlight.id,
+    airline: selectedFlight.airline,
+    flightCode: selectedFlight.code,
+    fromCode: selectedFlight.fromCode,
+    fromName: selectedFlight.fromName,
+    toCode: selectedFlight.toCode,
+    toName: selectedFlight.toName,
+    departTime: selectedFlight.departTime,
+    arriveTime: selectedFlight.arriveTime,
+    duration: selectedFlight.duration,
+    cabin: selectedFlight.cabin,
+    departDate: formData.flightDate,
+    adults: paxAdults,
+    children: paxChildren,
+    infants: paxInfants,
+    totalAmount: totalAmount,
+    accountId: accountId,
+    status: "CONFIRMED",
+    transactionId,
+    orderId,
+    createdAt: createdAtTimestamp,
+    createdAtServer: rtdbServerTimestamp(),
+  });
+
+  // 2) Ghi đơn vào flightOrdersByUser/{uid}/{orderId} (giữ logic cũ)
+  const orderPath = `flightOrdersByUser/${user.uid}/${orderId}`;
   await set(ref(firebaseRtdb, orderPath), {
     orderId,
     orderNo,
-    uid,
+    uid: user.uid,
 
     // snapshot search info
     from: formData.flightFrom ?? null,
@@ -281,17 +437,20 @@ export async function createFlightOrder(params: {
     flight: selectedFlight,
 
     // payment
-    amount,
+    amount: totalAmount,
     currency: "VND",
-    status: "PAID", // demo coi như thanh toán xong
+    status: "PAID",
+
+    // references to Realtime Database
+    transactionId,
+    bookingId,
 
     createdAt: createdAtIso,
-    createdAtServer: serverTimestamp(),
-    transactionId: orderId,
+    createdAtServer: rtdbServerTimestamp(),
   });
 
-  // 3) Lưu recent search: flightRecent/{uid}/{pushId}
-  const recentRef = push(ref(firebaseRtdb, `flightRecent/${uid}`));
+  // 3) Lưu recent search: flightRecent/{uid}/{pushId} (giữ logic cũ)
+  const recentRef = push(ref(firebaseRtdb, `flightRecent/${user.uid}`));
   await set(recentRef, {
     from: formData.flightFrom ?? null,
     to: formData.flightTo ?? null,
@@ -305,8 +464,34 @@ export async function createFlightOrder(params: {
     children: paxChildren,
     infants: paxInfants,
     createdAt: createdAtIso,
-    createdAtServer: serverTimestamp(),
+    createdAtServer: rtdbServerTimestamp(),
   });
 
-  return { uid, orderId, orderNo, createdAtIso };
+  // Push balance-change notification to RTDB (Biến động tab)
+  try {
+    const notiRef = push(ref(firebaseRtdb, `notifications/${user.uid}`));
+    const createdAt = Date.now();
+    await set(notiRef, {
+      type: "BALANCE_CHANGE",
+      direction: "OUT",
+      title: "Đặt vé máy bay",
+      message: `${selectedFlight.airline} • ${selectedFlight.fromCode} → ${selectedFlight.toCode}`,
+      amount: totalAmount,
+      accountNumber: accountId,
+      balanceAfter,
+      transactionId,
+      createdAt,
+    });
+  } catch (err) {
+    console.warn("createFlightOrder notification failed (ignored):", err);
+  }
+
+  return {
+    uid: user.uid,
+    orderId,
+    orderNo,
+    createdAtIso,
+    bookingId,
+    transactionId,
+  };
 }

@@ -15,7 +15,6 @@ export const getBillServiceLabel = (service: BillService | null) => {
 
 export function buildBillReceipt(args: {
   billService: BillService;
-  billSave: boolean;
   formData: UtilityFormData;
 }): UtilityResultState {
   const now = new Date();
@@ -28,9 +27,22 @@ export function buildBillReceipt(args: {
       ? "Thanh toán hóa đơn nước"
       : "Thanh toán hóa đơn điện thoại di động";
 
+  // Use actual bill amount from formData if available
+  const amountNumber = args.formData.billAmount
+    ? Number(args.formData.billAmount)
+    : (() => {
+        // Fallback: calculate based on customer code
+        const code = args.formData.customerCode || "";
+        const hash = code
+          .split("")
+          .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        return 150000 + (hash % 500000);
+      })();
+  const amount = amountNumber.toLocaleString("vi-VN");
+
   return {
     flow: "bill",
-    amount: "350.000",
+    amount,
     title,
     time: now.toLocaleString("vi-VN"),
     fee: "0 đ",
@@ -39,7 +51,6 @@ export function buildBillReceipt(args: {
       { label: "Loại hóa đơn", value: serviceLabel },
       { label: "Nhà cung cấp", value: args.formData.billProvider || "-" },
       { label: "Mã khách hàng", value: args.formData.customerCode },
-      { label: "Lưu hóa đơn", value: args.billSave ? "Có" : "Không" },
     ],
   };
 }
