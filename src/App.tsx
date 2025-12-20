@@ -372,15 +372,6 @@ const App = () => (
               </>
             }
           />
-          <Route
-            path="/utilities/:type"
-            element={
-              <>
-                <UtilityBills />
-                <BottomNav />
-              </>
-            }
-          />
           <Route path="/utilities/:type" element={<UtilitiesShell />} />
 
           <Route

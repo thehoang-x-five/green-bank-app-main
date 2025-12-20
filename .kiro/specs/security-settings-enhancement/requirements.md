@@ -2,16 +2,16 @@
 
 ## Introduction
 
-Cải tiến trang cài đặt bảo mật (SecuritySettings.tsx) để hỗ trợ đầy đủ việc quản lý đăng nhập bằng sinh trắc học và xác thực 2 lớp. Tính năng này sẽ cho phép người dùng bật/tắt đăng nhập bằng vân tay, cấu hình xác thực 2 lớp với nhiều phương thức khác nhau, và tích hợp với biometric service hiện có.
+Cải tiến trang cài đặt bảo mật (SecuritySettings.tsx) để thêm chức năng bật/tắt đăng nhập bằng sinh trắc học và xác thực 2 lớp. Hiện tại trang này chỉ có chức năng đổi mật khẩu đăng nhập và thiết lập/đổi PIN giao dịch. Cần bổ sung thêm các tính năng bảo mật nâng cao để người dùng có thể quản lý đầy đủ các phương thức xác thực.
 
 ## Glossary
 
 - **SecuritySettings**: Trang cài đặt bảo mật trong ứng dụng VietBank
-- **BiometricService**: Service quản lý xác thực sinh trắc học (vân tay/FaceID)
+- **BiometricService**: Service quản lý xác thực sinh trắc học (vân tay/FaceID) đã có sẵn
+- **BiometricLogin**: Chức năng đăng nhập bằng sinh trắc học cần được thêm vào
 - **TwoFactorAuth**: Xác thực 2 lớp yêu cầu thêm bước xác minh khi đăng nhập
 - **AuthMethod**: Phương thức xác thực (SMS OTP, Smart OTP, Token, Sinh trắc học)
-- **UserPreferences**: Cài đặt cá nhân của người dùng được lưu trữ
-- **BiometricLogin**: Chức năng đăng nhập bằng sinh trắc học
+- **UserPreferences**: Cài đặt cá nhân của người dùng được lưu trữ trong Firebase/Firestore
 - **AuthenticationFlow**: Luồng xác thực đăng nhập của người dùng
 
 ## Requirements
@@ -22,68 +22,68 @@ Cải tiến trang cài đặt bảo mật (SecuritySettings.tsx) để hỗ tr�
 
 #### Acceptance Criteria
 
-1. WHEN người dùng bật đăng nhập sinh trắc học, THE SecuritySettings SHALL kiểm tra khả năng sinh trắc học của thiết bị và lưu cài đặt
-2. WHEN người dùng tắt đăng nhập sinh trắc học, THE SecuritySettings SHALL vô hiệu hóa tính năng và yêu cầu đăng nhập bằng mật khẩu
+1. WHEN người dùng truy cập SecuritySettings, THE SecuritySettings SHALL hiển thị tùy chọn bật/tắt đăng nhập sinh trắc học
+2. WHEN người dùng bật đăng nhập sinh trắc học, THE SecuritySettings SHALL kiểm tra khả năng sinh trắc học của thiết bị bằng BiometricService
 3. WHEN thiết bị không hỗ trợ sinh trắc học, THE SecuritySettings SHALL hiển thị thông báo và vô hiệu hóa tùy chọn
-4. WHEN cài đặt sinh trắc học được thay đổi, THE SecuritySettings SHALL lưu trữ cài đặt vào UserPreferences
-5. WHEN người dùng chưa đăng ký sinh trắc học trên thiết bị, THE SecuritySettings SHALL hiển thị hướng dẫn thiết lập
+4. WHEN người dùng tắt đăng nhập sinh trắc học, THE SecuritySettings SHALL lưu cài đặt và yêu cầu đăng nhập bằng mật khẩu
+5. WHEN cài đặt sinh trắc học được thay đổi, THE SecuritySettings SHALL lưu trữ cài đặt vào UserPreferences
 
 ### Requirement 2
 
-**User Story:** Là người dùng, tôi muốn cấu hình xác thực 2 lớp khi đăng nhập, để tăng cường bảo mật tài khoản của mình.
+**User Story:** Là người dùng, tôi muốn bật/tắt xác thực 2 lớp khi đăng nhập, để tăng cường bảo mật tài khoản của mình.
 
 #### Acceptance Criteria
 
-1. WHEN người dùng bật xác thực 2 lớp, THE SecuritySettings SHALL hiển thị các phương thức xác thực khả dụng
-2. WHEN người dùng chọn phương thức xác thực, THE SecuritySettings SHALL lưu lựa chọn và cập nhật AuthenticationFlow
+1. WHEN người dùng truy cập SecuritySettings, THE SecuritySettings SHALL hiển thị tùy chọn bật/tắt xác thực 2 lớp
+2. WHEN người dùng bật xác thực 2 lớp, THE SecuritySettings SHALL lưu cài đặt và áp dụng cho lần đăng nhập tiếp theo
 3. WHEN người dùng tắt xác thực 2 lớp, THE SecuritySettings SHALL hiển thị cảnh báo bảo mật và yêu cầu xác nhận
-4. WHEN cài đặt xác thực 2 lớp được thay đổi, THE SecuritySettings SHALL gửi thông báo xác nhận qua phương thức hiện tại
-5. WHEN người dùng chọn nhiều phương thức xác thực, THE SecuritySettings SHALL cho phép thiết lập thứ tự ưu tiên
+4. WHEN xác thực 2 lớp được bật, THE SecuritySettings SHALL yêu cầu OTP khi đăng nhập từ thiết bị mới
+5. WHEN cài đặt xác thực 2 lớp được thay đổi, THE SecuritySettings SHALL gửi thông báo xác nhận
 
 ### Requirement 3
 
-**User Story:** Là người dùng, tôi muốn chọn phương thức xác thực ưa thích, để có trải nghiệm đăng nhập phù hợp với nhu cầu của mình.
+**User Story:** Là người dùng, tôi muốn chọn phương thức xác thực 2 lớp ưa thích, để có trải nghiệm đăng nhập phù hợp với nhu cầu của mình.
 
 #### Acceptance Criteria
 
-1. WHEN người dùng truy cập cài đặt phương thức xác thực, THE SecuritySettings SHALL hiển thị danh sách các phương thức khả dụng
+1. WHEN xác thực 2 lớp được bật, THE SecuritySettings SHALL hiển thị các phương thức xác thực khả dụng
 2. WHEN người dùng chọn SMS OTP, THE SecuritySettings SHALL xác minh số điện thoại và lưu cài đặt
-3. WHEN người dùng chọn Smart OTP, THE SecuritySettings SHALL kiểm tra ứng dụng Smart OTP và thiết lập kết nối
-4. WHEN người dùng chọn Token thiết bị, THE SecuritySettings SHALL hướng dẫn kích hoạt và đồng bộ token
-5. WHEN người dùng chọn sinh trắc học, THE SecuritySettings SHALL tích hợp với BiometricService để xác thực
+3. WHEN người dùng chọn Smart OTP, THE SecuritySettings SHALL hiển thị hướng dẫn cài đặt ứng dụng Smart OTP
+4. WHEN người dùng chọn Token thiết bị, THE SecuritySettings SHALL hiển thị hướng dẫn kích hoạt token
+5. WHEN phương thức được chọn, THE SecuritySettings SHALL lưu lựa chọn vào UserPreferences
 
 ### Requirement 4
 
-**User Story:** Là người dùng, tôi muốn hệ thống tự động phát hiện và đề xuất phương thức xác thực tối ưu, để có trải nghiệm đăng nhập tốt nhất.
+**User Story:** Là người dùng, tôi muốn xem trạng thái hiện tại của các cài đặt bảo mật, để biết được mức độ bảo mật tài khoản của mình.
 
 #### Acceptance Criteria
 
-1. WHEN người dùng lần đầu truy cập cài đặt bảo mật, THE SecuritySettings SHALL quét khả năng thiết bị và đề xuất phương thức phù hợp
-2. WHEN thiết bị hỗ trợ sinh trắc học, THE SecuritySettings SHALL ưu tiên đề xuất đăng nhập sinh trắc học
-3. WHEN thiết bị không hỗ trợ sinh trắc học, THE SecuritySettings SHALL đề xuất SMS OTP hoặc Smart OTP
-4. WHEN phương thức hiện tại không khả dụng, THE SecuritySettings SHALL tự động chuyển sang phương thức dự phòng
-5. WHEN có phương thức mới khả dụng, THE SecuritySettings SHALL thông báo và đề xuất nâng cấp
+1. WHEN người dùng truy cập SecuritySettings, THE SecuritySettings SHALL hiển thị trạng thái hiện tại của đăng nhập sinh trắc học
+2. WHEN người dùng truy cập SecuritySettings, THE SecuritySettings SHALL hiển thị trạng thái hiện tại của xác thực 2 lớp
+3. WHEN có cài đặt bảo mật được bật, THE SecuritySettings SHALL hiển thị badge hoặc indicator tương ứng
+4. WHEN thiết bị không hỗ trợ sinh trắc học, THE SecuritySettings SHALL hiển thị thông báo rõ ràng
+5. WHEN có lỗi khi tải cài đặt, THE SecuritySettings SHALL hiển thị thông báo lỗi và cho phép thử lại
 
 ### Requirement 5
 
-**User Story:** Là người dùng, tôi muốn xem trạng thái và lịch sử các phương thức xác thực, để theo dõi và quản lý bảo mật tài khoản.
+**User Story:** Là hệ thống, tôi cần tích hợp với BiometricService và UserService hiện có, để đảm bảo tính nhất quán và tái sử dụng code.
 
 #### Acceptance Criteria
 
-1. WHEN người dùng xem cài đặt bảo mật, THE SecuritySettings SHALL hiển thị trạng thái của từng phương thức xác thực
-2. WHEN có thay đổi cài đặt bảo mật, THE SecuritySettings SHALL ghi lại thời gian và loại thay đổi
-3. WHEN người dùng xem lịch sử bảo mật, THE SecuritySettings SHALL hiển thị các hoạt động gần đây
-4. WHEN phát hiện hoạt động bất thường, THE SecuritySettings SHALL hiển thị cảnh báo và hướng dẫn xử lý
-5. WHEN người dùng yêu cầu xuất báo cáo bảo mật, THE SecuritySettings SHALL tạo tóm tắt cài đặt hiện tại
+1. WHEN SecuritySettings cần kiểm tra khả năng sinh trắc học, THE SecuritySettings SHALL sử dụng BiometricService.runBiometricVerification
+2. WHEN SecuritySettings cần lưu cài đặt người dùng, THE SecuritySettings SHALL sử dụng UserService hoặc Firebase/Firestore
+3. WHEN SecuritySettings cần xác thực sinh trắc học, THE SecuritySettings SHALL sử dụng các hàm từ BiometricService
+4. WHEN xử lý lỗi sinh trắc học, THE SecuritySettings SHALL sử dụng BiometricVerificationResponse từ BiometricService
+5. WHEN cập nhật cài đặt, THE SecuritySettings SHALL đồng bộ với cấu trúc dữ liệu hiện có
 
 ### Requirement 6
 
-**User Story:** Là hệ thống, tôi cần tích hợp với BiometricService hiện có, để đảm bảo tính nhất quán và tái sử dụng code.
+**User Story:** Là người dùng, tôi muốn giao diện cài đặt bảo mật nhất quán với thiết kế hiện tại, để có trải nghiệm sử dụng mượt mà.
 
 #### Acceptance Criteria
 
-1. WHEN SecuritySettings cần xác thực sinh trắc học, THE SecuritySettings SHALL sử dụng BiometricService.runBiometricVerification
-2. WHEN kiểm tra khả năng sinh trắc học, THE SecuritySettings SHALL sử dụng các hàm tiện ích từ BiometricService
-3. WHEN lưu cài đặt sinh trắc học, THE SecuritySettings SHALL tuân theo cấu trúc dữ liệu của BiometricService
-4. WHEN xử lý lỗi sinh trắc học, THE SecuritySettings SHALL sử dụng BiometricVerificationResponse từ BiometricService
-5. WHEN cập nhật ngưỡng sinh trắc học, THE SecuritySettings SHALL đồng bộ với HIGH_VALUE_THRESHOLD_VND
+1. WHEN thêm tính năng mới, THE SecuritySettings SHALL giữ nguyên cấu trúc Card và layout hiện tại
+2. WHEN hiển thị tùy chọn bật/tắt, THE SecuritySettings SHALL sử dụng Switch component như các tùy chọn khác
+3. WHEN hiển thị thông tin bổ sung, THE SecuritySettings SHALL sử dụng Label và muted-foreground text
+4. WHEN có form con, THE SecuritySettings SHALL sử dụng pattern border-t và pt-3 như form PIN hiện tại
+5. WHEN hiển thị trạng thái, THE SecuritySettings SHALL sử dụng Badge component phù hợp
