@@ -2,22 +2,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { nearbyPois, type NearbyPoi } from "@/services/nearbyPois";
-import { firebaseAuth } from "@/lib/firebase";
 import {
   ArrowLeft,
   PhoneCall,
-  MessageCircle,
   Mail,
   MapPin,
-  AlertCircle,
-  Info,
   ChevronRight,
   ExternalLink,
+  Shield,
+  Info,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { nearbyPois, type NearbyPoi } from "@/services/nearbyPois";
+import { firebaseAuth } from "@/lib/firebase";
+
+type FaqItem = { q: string; a: string };
 type LatLng = { lat: number; lon: number };
 
 const MAPLIBRE_JS =
@@ -82,6 +83,12 @@ function haversineM(a: LatLng, b: LatLng): number {
 
 const SupportHelp = () => {
   const navigate = useNavigate();
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
+
+  const hotline = "1900 1234";
+  const supportEmail = "support@vietbank.com";
+
+  // ==== Map/Location states (from file 1) ====
   const [locating, setLocating] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [radius, setRadius] = useState(1500);
@@ -91,10 +98,33 @@ const SupportHelp = () => {
   const [filterName, setFilterName] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [lastSearchRadius, setLastSearchRadius] = useState<number | null>(null);
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
   const highlightedIdRef = useRef<string | null>(null);
+
+  const faqs: FaqItem[] = useMemo(
+    () => [
+      {
+        q: "Quên mật khẩu đăng nhập thì làm sao?",
+        a: "Tại màn hình Đăng nhập, chọn “Quên mật khẩu” và nhập email đã đăng ký. Hệ thống sẽ gửi email hướng dẫn đặt lại mật khẩu (có thể nằm trong Spam).",
+      },
+      {
+        q: "Không nhận được OTP khi giao dịch?",
+        a: "Hãy kiểm tra kết nối mạng, kiểm tra hộp thư Spam/Quảng cáo. Nếu vẫn không có, đợi 1–2 phút rồi thử gửi lại OTP.",
+      },
+      {
+        q: "Chuyển tiền liên ngân hàng bao lâu thì nhận được?",
+        a: "Thông thường vài phút đến vài chục phút tùy ngân hàng/giờ giao dịch. Nếu ngoài giờ, giao dịch có thể xử lý vào ngày làm việc tiếp theo.",
+      },
+      {
+        q: "Mất điện thoại / nghi ngờ lộ thông tin phải làm gì?",
+        a: "Hãy đổi mật khẩu ngay, đổi PIN giao dịch và liên hệ tổng đài để được hỗ trợ khóa phiên đăng nhập nếu cần.",
+      },
+    ],
+    []
+  );
 
   const displayedAtms = useMemo(() => {
     if (!filterName) return nearbyAtms;
@@ -132,24 +162,6 @@ const SupportHelp = () => {
     [displayedAtms]
   );
 
-  const handleCallHotline = () => {
-    // Thực tế: mở tel:1900xxxx
-    toast.success("Đang kết nối tổng đài 1900 1234 (demo)");
-  };
-
-  const handleSendEmail = () => {
-    // Thực tế: mở mailto:
-    toast.info("Mở ứng dụng email tới support@vietbank.com (demo)");
-  };
-
-  const handleLiveChat = () => {
-    toast.info("Tính năng chat với CSKH đang được mở rộng (demo)");
-  };
-
-  const handleReportIssue = () => {
-    toast.info("Màn hình báo lỗi giao dịch sẽ được triển khai (demo)");
-  };
-
   const handleFindBranch = async () => {
     if (!firebaseAuth.currentUser) {
       toast.error("Bạn cần đăng nhập trước khi tìm chi nhánh/ATM.");
@@ -159,7 +171,7 @@ const SupportHelp = () => {
     setLocating(true);
     let current: LatLng | null = null;
 
-    // Bước 1: lấy vị trí
+    // Step 1: get location
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         if (!navigator.geolocation) {
@@ -182,7 +194,7 @@ const SupportHelp = () => {
       return;
     }
 
-    // Bước 2: gọi nearbyPois
+    // Step 2: query nearby POIs
     try {
       const res = await nearbyPois({
         lat: current.lat,
@@ -204,7 +216,6 @@ const SupportHelp = () => {
 
       enriched.sort((a, b) => (a.distanceM ?? 0) - (b.distanceM ?? 0));
 
-      // Lọc đúng loại amenity để tránh trộn seed khác loại
       const amenityFiltered = enriched.filter((item) => {
         const tag = item.tags?.amenity?.toLowerCase();
         return !tag || !amenity ? true : tag === amenity;
@@ -224,6 +235,7 @@ const SupportHelp = () => {
     }
   };
 
+  // init MapLibre once
   useEffect(() => {
     let map: any;
     let destroyed = false;
@@ -343,31 +355,28 @@ const SupportHelp = () => {
 
     return () => {
       destroyed = true;
-      if (map) {
-        map.remove();
-      }
+      if (map) map.remove();
       mapInstanceRef.current = null;
       setMapReady(false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // update POI source when data changes
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!mapReady || !map) return;
     const src = map.getSource("atm-pois") as any;
-    if (src?.setData) {
-      src.setData(poiGeoJson as any);
-    }
+    if (src?.setData) src.setData(poiGeoJson as any);
   }, [mapReady, poiGeoJson]);
 
+  // update user marker
   useEffect(() => {
     const maplibregl = (window as any).maplibregl;
     const map = mapInstanceRef.current;
     if (!maplibregl || !map || !userPosition) return;
 
-    if (userMarkerRef.current) {
-      userMarkerRef.current.remove();
-    }
+    if (userMarkerRef.current) userMarkerRef.current.remove();
 
     userMarkerRef.current = new maplibregl.Marker({
       color: "#f97316",
@@ -387,6 +396,7 @@ const SupportHelp = () => {
           <button
             onClick={() => navigate("/profile")}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            aria-label="Quay lại"
           >
             <ArrowLeft size={24} />
           </button>
@@ -395,119 +405,52 @@ const SupportHelp = () => {
           </h1>
           <div className="w-10" />
         </div>
+
+        <div className="mt-4 rounded-2xl bg-white/15 p-4 text-primary-foreground/95">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-full bg-white/20 p-2">
+              <Shield className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Hỗ trợ nhanh – an toàn</p>
+              <p className="text-xs text-primary-foreground/80">
+                Luôn bảo mật OTP/PIN/mật khẩu. VietBank không yêu cầu cung cấp OTP
+                qua tin nhắn/chat.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="px-6 -mt-4 space-y-4">
-        {/* Kênh liên hệ nhanh */}
+        {/* Chi nhánh / ATM (FE theo file 2 + gắn định vị từ file 1) */}
         <Card className="p-5 space-y-3">
-          <h2 className="text-sm font-semibold mb-1">Liên hệ nhanh</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-3"
-              onClick={handleCallHotline}
-            >
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                <PhoneCall className="w-4 h-4 text-primary" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium">Gọi tổng đài</p>
-                <p className="text-xs text-muted-foreground">
-                  1900 1234 (24/7)
-                </p>
-              </div>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-3"
-              onClick={handleLiveChat}
-            >
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                <MessageCircle className="w-4 h-4 text-primary" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium">Chat với VietBank</p>
-                <p className="text-xs text-muted-foreground">
-                  Hỗ trợ trực tuyến
-                </p>
-              </div>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-3"
-              onClick={handleSendEmail}
-            >
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                <Mail className="w-4 h-4 text-primary" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium">Gửi email hỗ trợ</p>
-                <p className="text-xs text-muted-foreground">
-                  support@vietbank.com
-                </p>
-              </div>
-            </Button>
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">Chi nhánh & ATM</h2>
           </div>
-        </Card>
-
-        {/* Các vấn đề thường gặp / FAQ */}
-        <Card className="p-5 space-y-2">
-          <h2 className="text-sm font-semibold mb-2">Câu hỏi thường gặp</h2>
-
-          {[
-            "Quên mật khẩu đăng nhập / khóa tài khoản",
-            "Không nhận được OTP khi giao dịch",
-            "Khi nào tiền chuyển liên ngân hàng được ghi có?",
-            "Xử lý khi nghi ngờ lộ thông tin / mất điện thoại",
-          ].map((title, idx) => (
-            <button
-              key={idx}
-              className="w-full flex items-center justify-between py-2 text-sm hover:bg-muted/60 px-2 rounded-md transition-colors"
-              onClick={() =>
-                toast.info(`Màn chi tiết FAQ "${title}" đang được mô phỏng`)
-              }
-            >
-              <div className="flex items-center gap-2 text-left">
-                <Info className="w-4 h-4 text-primary" />
-                <span>{title}</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </button>
-          ))}
-        </Card>
-
-        {/* Hỗ trợ giao dịch & khiếu nại */}
-        <Card className="p-5 space-y-3">
-          <h2 className="text-sm font-semibold mb-1">
-            Hỗ trợ giao dịch & khiếu nại
-          </h2>
 
           <p className="text-xs text-muted-foreground">
-            Nếu bạn phát hiện giao dịch bất thường, vui lòng báo ngay để ngân
-            hàng kiểm tra và hỗ trợ kịp thời.
+            Tìm điểm giao dịch gần bạn, xem giờ làm việc và điều hướng trên bản đồ.
           </p>
 
           <Button
             variant="outline"
             className="w-full justify-start gap-3"
-            onClick={handleReportIssue}
+            onClick={handleFindBranch}
+            disabled={locating}
           >
-            <div className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center">
-              <AlertCircle className="w-4 h-4 text-destructive" />
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+              <MapPin className="w-4 h-4 text-primary" />
             </div>
-            <div className="text-left">
-              <p className="text-sm font-medium">
-                Báo lỗi / tra soát giao dịch
-              </p>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-medium">Tìm chi nhánh / ATM gần bạn</p>
               <p className="text-xs text-muted-foreground">
-                Giao dịch chuyển tiền, thanh toán, nạp tiền...
+                {locating ? "Đang lấy vị trí..." : "Lấy vị trí & tìm quanh bạn"}
               </p>
             </div>
+            <ExternalLink className="w-4 h-4 text-muted-foreground" />
           </Button>
-        </Card>
 
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold mb-1">
@@ -550,10 +493,12 @@ const SupportHelp = () => {
                 />
                 <span>m</span>
               </div>
+
               <div className="flex gap-2 relative">
                 <Button size="sm" onClick={handleFindBranch} disabled={locating}>
                   {locating ? "Đang lấy vị trí..." : "Lấy vị trí & tìm"}
                 </Button>
+
                 <div className="relative">
                   <Button
                     size="sm"
@@ -563,6 +508,7 @@ const SupportHelp = () => {
                   >
                     {filterName ? `Lọc: ${filterName}` : "Lọc kết quả"}
                   </Button>
+
                   {filterOpen && (
                     <div className="absolute right-0 z-20 mt-2 w-56 rounded-md border border-muted bg-background shadow-md max-h-60 overflow-y-auto scrollbar-none">
                       <button
@@ -658,18 +604,91 @@ const SupportHelp = () => {
               </div>
             )}
           </div>
+        </Card>
 
-          <div className="flex items-center justify-between pt-2 border-t border-muted/60">
+        {/* Thông tin liên hệ (giữ nguyên FE file 2: chỉ hiển thị) */}
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <PhoneCall className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">Liên hệ ngân hàng</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-muted/60 p-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                <PhoneCall className="w-4 h-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium">Hotline</p>
+                <p className="text-xs text-muted-foreground">{hotline} (24/7)</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-muted/60 p-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                <Mail className="w-4 h-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium">Email hỗ trợ</p>
+                <p className="text-xs text-muted-foreground">{supportEmail}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
+            Thời gian phản hồi email thường trong vòng 24–48h (ngày làm việc).
+          </div>
+        </Card>
+
+        {/* FAQ (giữ nguyên FE file 2) */}
+        <Card className="p-5 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Info className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">Câu hỏi thường gặp</h2>
+          </div>
+
+          <div className="space-y-2">
+            {faqs.map((item, idx) => {
+              const isOpen = openFaq === idx;
+              return (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-muted/60 overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-3 py-3 text-left hover:bg-muted/50 transition-colors"
+                    onClick={() => setOpenFaq((p) => (p === idx ? null : idx))}
+                  >
+                    <span className="text-sm font-medium">{item.q}</span>
+                    <ChevronRight
+                      className={`w-4 h-4 text-muted-foreground transition-transform ${
+                        isOpen ? "rotate-90" : ""
+                      }`}
+                    />
+                  </button>
+                  {isOpen && (
+                    <div className="px-3 pb-3 text-xs text-muted-foreground leading-relaxed">
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Footer app info (giữ nguyên FE file 2) */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">Phiên bản ứng dụng</p>
-              <p className="text-sm font-medium">VietBank v1.0.0</p>
+              <p className="text-sm font-medium">VietBank Mobile v1.0.0</p>
             </div>
             <button
-              className="flex items-center gap-1 text-xs text-primary hover:underline"
+              className="text-xs text-primary hover:underline"
               onClick={() =>
-                toast.info(
-                  "Điều khoản sử dụng & chính sách bảo mật (demo)"
-                )
+                toast.info("Điều khoản sử dụng & chính sách bảo mật (demo)")
               }
             >
               Điều khoản &amp; Chính sách

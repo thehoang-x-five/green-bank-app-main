@@ -1,56 +1,112 @@
 // src/pages/SecuritySettings.tsx
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import {
-  ArrowLeft,
-  Shield,
-  Lock,
-  KeyRound,
-  Bell,
-  Smartphone,
-  AlertTriangle,
-} from "lucide-react";
+import { ArrowLeft, Shield, Lock, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { signOut } from "firebase/auth";
+
 import { firebaseAuth } from "@/lib/firebase";
-import { setTransactionPin } from "@/services/userService";
+import { changeTransactionPin, changeLoginPassword } from "@/services/userService";
 
 const SecuritySettings = () => {
   const navigate = useNavigate();
 
-  // state demo cho các tuỳ chọn
-  const [biometricLogin, setBiometricLogin] = useState(true);
-  const [twoFactorLogin, setTwoFactorLogin] = useState(true);
-  const [txnPinEnabled, setTxnPinEnabled] = useState(true);
-  const [biometricForTransfer, setBiometricForTransfer] = useState(false);
+  // ===== Password policy (UI) =====
+  const passwordGuide =
+    "Mật khẩu mới tối thiểu 8 ký tự, gồm ít nhất 1 chữ hoa, 1 chữ số và 1 ký tự đặc biệt.";
 
-  const [otpMethod, setOtpMethod] = useState<"sms" | "smartotp" | "token">(
-    "sms"
-  );
+  const validateStrongPassword = (pw: string): string | null => {
+    if (!pw || pw.length < 8) return "Mật khẩu mới phải có ít nhất 8 ký tự.";
+    if (!/[A-Z]/.test(pw)) return "Mật khẩu mới phải có ít nhất 1 chữ hoa (A-Z).";
+    if (!/[0-9]/.test(pw)) return "Mật khẩu mới phải có ít nhất 1 chữ số (0-9).";
+    if (!/[^A-Za-z0-9]/.test(pw))
+      return "Mật khẩu mới phải có ít nhất 1 ký tự đặc biệt (vd: !@#$%^&*).";
+    return null;
+  };
 
-  const [securityAlert, setSecurityAlert] = useState({
-    newDevice: true,
-    highValueTxn: true,
-    changeSecurity: true,
-  });
+  // ===== 1) Đổi mật khẩu đăng nhập =====
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPasswordValue, setNewPasswordValue] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  // === State cho form thiết lập / đổi PIN giao dịch ===
+  const resetPasswordForm = () => {
+    setShowPasswordForm(false);
+    setCurrentPassword("");
+    setNewPasswordValue("");
+    setNewPasswordConfirm("");
+  };
+
+  const handleSubmitChangePassword = async () => {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      toast.error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    if (!currentPassword || !newPasswordValue || !newPasswordConfirm) {
+      toast.error("Vui lòng nhập đầy đủ các trường.");
+      return;
+    }
+
+    if (newPasswordValue !== newPasswordConfirm) {
+      toast.error("Mật khẩu mới và xác nhận không khớp.");
+      return;
+    }
+
+    const pwErr = validateStrongPassword(newPasswordValue);
+    if (pwErr) {
+      toast.error(pwErr);
+      return;
+    }
+
+    try {
+      setIsSavingPassword(true);
+
+      await changeLoginPassword({
+        currentPassword,
+        newPassword: newPasswordValue,
+      });
+
+      toast.success("Đổi mật khẩu thành công.");
+
+      // tăng bảo mật: logout bắt buộc
+      resetPasswordForm();
+      await signOut(firebaseAuth);
+      toast.info("Vui lòng đăng nhập lại với mật khẩu mới.");
+      navigate("/login", { replace: true });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Không thể đổi mật khẩu. Vui lòng thử lại.";
+      console.error(error);
+      toast.error(message);
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  // ===== 2) Đổi PIN giao dịch =====
   const [showPinForm, setShowPinForm] = useState(false);
+  const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
   const [isSavingPin, setIsSavingPin] = useState(false);
 
-  const handleChangePassword = () => {
-    toast.info("Màn hình đổi mật khẩu sẽ được triển khai (demo)");
+  const resetPinForm = () => {
+    setShowPinForm(false);
+    setCurrentPin("");
+    setPin("");
+    setPinConfirm("");
   };
 
-  const handleChangePin = () => {
-    setShowPinForm((prev) => !prev);
-  };
+  const isValidPin = (v: string) => /^\d{4,6}$/.test(v);
 
   const handleSubmitPin = async () => {
     const user = firebaseAuth.currentUser;
@@ -60,45 +116,50 @@ const SecuritySettings = () => {
       return;
     }
 
+    if (!currentPin) {
+      toast.error("Vui lòng nhập PIN hiện tại.");
+      return;
+    }
+    if (!isValidPin(currentPin)) {
+      toast.error("PIN hiện tại phải từ 4–6 số.");
+      return;
+    }
+
     if (!pin || !pinConfirm) {
-      toast.error("Vui lòng nhập đầy đủ PIN và xác nhận PIN.");
+      toast.error("Vui lòng nhập đầy đủ PIN mới và xác nhận PIN.");
+      return;
+    }
+
+    if (!isValidPin(pin)) {
+      toast.error("PIN mới phải từ 4–6 số.");
       return;
     }
 
     if (pin !== pinConfirm) {
-      toast.error("PIN và xác nhận PIN không khớp.");
+      toast.error("PIN mới và xác nhận PIN không khớp.");
       return;
     }
 
-    if (pin.length < 4 || pin.length > 6) {
-      toast.error("PIN phải từ 4–6 số.");
+    if (currentPin === pin) {
+      toast.error("PIN mới phải khác PIN hiện tại.");
       return;
     }
 
     try {
       setIsSavingPin(true);
-      await setTransactionPin(user.uid, pin);
-      toast.success("Đã thiết lập / đổi PIN giao dịch thành công.");
-      setTxnPinEnabled(true);
-      setShowPinForm(false);
-      setPin("");
-      setPinConfirm("");
+
+      await changeTransactionPin(user.uid, currentPin, pin);
+
+      toast.success("Đã đổi PIN giao dịch thành công.");
+      resetPinForm();
     } catch (error: unknown) {
-      let message =
-        "Không thể cập nhật PIN giao dịch. Vui lòng thử lại.";
-      if (error instanceof Error && error.message) {
-        message = error.message;
-      }
+      let message = "Không thể cập nhật PIN giao dịch. Vui lòng thử lại.";
+      if (error instanceof Error && error.message) message = error.message;
       console.error(error);
       toast.error(message);
     } finally {
       setIsSavingPin(false);
     }
-  };
-
-  const handleSave = () => {
-    // Thực tế: gọi API lưu cấu hình bảo mật
-    toast.success("Đã lưu cài đặt bảo mật (demo)");
   };
 
   return (
@@ -109,6 +170,7 @@ const SecuritySettings = () => {
           <button
             onClick={() => navigate("/profile")}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            aria-label="Quay lại"
           >
             <ArrowLeft size={24} />
           </button>
@@ -118,127 +180,147 @@ const SecuritySettings = () => {
       </div>
 
       <div className="px-6 -mt-4 space-y-4">
-        {/* Đăng nhập & xác thực */}
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Shield className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Đăng nhập & xác thực</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Đăng nhập bằng sinh trắc học
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Sử dụng vân tay / FaceID để đăng nhập nhanh
-              </p>
-            </div>
-            <Switch
-              checked={biometricLogin}
-              onCheckedChange={(checked) => {
-                setBiometricLogin(checked);
-                toast.success(
-                  checked
-                    ? "Đã bật đăng nhập bằng sinh trắc học (demo)"
-                    : "Đã tắt đăng nhập bằng sinh trắc học (demo)"
-                );
-              }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Xác thực 2 lớp khi đăng nhập
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Gửi OTP khi đăng nhập trên thiết bị mới
-              </p>
-            </div>
-            <Switch
-              checked={twoFactorLogin}
-              onCheckedChange={(checked) => setTwoFactorLogin(checked)}
-            />
-          </div>
-        </Card>
-
-        {/* Mật khẩu & PIN giao dịch */}
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-1">
+        {/* Card: Đổi mật khẩu */}
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Mật khẩu & PIN giao dịch</h2>
+            <h2 className="text-sm font-semibold">Mật khẩu đăng nhập</h2>
           </div>
 
           <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">Mật khẩu đăng nhập</Label>
+            <div className="pr-3">
+              <Label className="text-sm font-medium">Đổi mật khẩu</Label>
               <p className="text-xs text-muted-foreground">
-                Nên thay đổi định kỳ 3–6 tháng/lần
+                Khuyến nghị đổi định kỳ để tăng bảo mật tài khoản.
               </p>
             </div>
-            <Button size="sm" variant="outline" onClick={handleChangePassword}>
-              Đổi mật khẩu
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPasswordForm((p) => !p)}
+            >
+              {showPasswordForm ? "Đóng" : "Đổi mật khẩu"}
             </Button>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Mật khẩu giao dịch / PIN
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Xác nhận trước khi chuyển tiền hoặc thanh toán
-              </p>
+          {showPasswordForm && (
+            <div className="mt-2 space-y-3 border-t pt-3">
+              <div className="rounded-lg bg-muted/60 p-3 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-primary" />
+                  <span className="font-medium text-foreground">
+                    Chính sách mật khẩu
+                  </span>
+                </div>
+                <p className="mt-1">{passwordGuide}</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Mật khẩu hiện tại"
+                  autoComplete="current-password"
+                />
+                <Input
+                  type="password"
+                  value={newPasswordValue}
+                  onChange={(e) => setNewPasswordValue(e.target.value)}
+                  placeholder="Mật khẩu mới"
+                  autoComplete="new-password"
+                />
+                <Input
+                  type="password"
+                  value={newPasswordConfirm}
+                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                  placeholder="Xác nhận mật khẩu mới"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={resetPasswordForm}
+                  disabled={isSavingPassword}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSubmitChangePassword}
+                  disabled={isSavingPassword}
+                >
+                  {isSavingPassword ? "Đang lưu..." : "Lưu mật khẩu"}
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={txnPinEnabled}
-                onCheckedChange={(checked) => setTxnPinEnabled(checked)}
-              />
-              <Button size="sm" variant="outline" onClick={handleChangePin}>
-                Thiết lập / đổi PIN
-              </Button>
-            </div>
+          )}
+        </Card>
+
+        {/* Card: PIN giao dịch */}
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">PIN giao dịch</h2>
           </div>
 
-          {/* Form thiết lập / đổi PIN giao dịch */}
+          <div className="flex items-center justify-between">
+            <div className="pr-3">
+              <Label className="text-sm font-medium">Thiết lập / đổi PIN</Label>
+              <p className="text-xs text-muted-foreground">
+                Dùng để xác nhận chuyển tiền hoặc thanh toán (4–6 số).
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPinForm((p) => !p)}
+            >
+              {showPinForm ? "Đóng" : "Thiết lập / đổi"}
+            </Button>
+          </div>
+
           {showPinForm && (
-            <div className="mt-3 space-y-3 border-t pt-3">
-              <Label className="text-xs text-muted-foreground">
-                Thiết lập mã PIN 4–6 số để xác nhận chuyển tiền / thanh toán.
-              </Label>
+            <div className="mt-2 space-y-3 border-t pt-3">
               <div className="flex flex-col gap-2">
                 <Input
                   type="password"
                   inputMode="numeric"
                   maxLength={6}
+                  value={currentPin}
+                  onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="PIN hiện tại"
+                  autoComplete="off"
+                />
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
                   value={pin}
-                  onChange={(e) =>
-                    setPin(e.target.value.replace(/\D/g, ""))
-                  }
-                  placeholder="Nhập PIN mới"
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="PIN mới"
+                  autoComplete="off"
                 />
                 <Input
                   type="password"
                   inputMode="numeric"
                   maxLength={6}
                   value={pinConfirm}
-                  onChange={(e) =>
-                    setPinConfirm(e.target.value.replace(/\D/g, ""))
-                  }
-                  placeholder="Nhập lại PIN để xác nhận"
+                  onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Xác nhận PIN mới"
+                  autoComplete="off"
                 />
               </div>
+
               <div className="flex justify-end gap-2">
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    setShowPinForm(false);
-                    setPin("");
-                    setPinConfirm("");
-                  }}
+                  onClick={resetPinForm}
+                  disabled={isSavingPin}
                 >
                   Hủy
                 </Button>
@@ -252,165 +334,20 @@ const SecuritySettings = () => {
               </div>
             </div>
           )}
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Dùng sinh trắc học khi xác nhận giao dịch
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Thay cho nhập mật khẩu giao dịch trong hạn mức cho phép
-              </p>
-            </div>
-            <Switch
-              checked={biometricForTransfer}
-              onCheckedChange={(checked) => setBiometricForTransfer(checked)}
-            />
-          </div>
         </Card>
 
-        {/* Phương thức nhận OTP */}
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Smartphone className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Phương thức nhận OTP</h2>
+        {/* Card: Mẹo bảo mật (không liên quan vân tay) */}
+        <Card className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">Mẹo bảo mật</h2>
           </div>
-
-          <p className="text-xs text-muted-foreground">
-            OTP được sử dụng để xác thực các giao dịch quan trọng.
-          </p>
-
-          <div className="inline-flex rounded-full border bg-muted/40 p-1">
-            <button
-              type="button"
-              onClick={() => setOtpMethod("sms")}
-              className={`px-4 py-1 text-xs rounded-full ${
-                otpMethod === "sms"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground"
-              }`}
-            >
-              SMS OTP
-            </button>
-            <button
-              type="button"
-              onClick={() => setOtpMethod("smartotp")}
-              className={`px-4 py-1 text-xs rounded-full ${
-                otpMethod === "smartotp"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground"
-              }`}
-            >
-              Smart OTP
-            </button>
-            <button
-              type="button"
-              onClick={() => setOtpMethod("token")}
-              className={`px-4 py-1 text-xs rounded-full ${
-                otpMethod === "token"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground"
-              }`}
-            >
-              Thiết bị Token
-            </button>
-          </div>
-
-          <p className="text-[11px] text-muted-foreground">
-            Thay đổi phương thức OTP có thể yêu cầu xác minh bổ sung tại quầy
-            hoặc qua eKYC theo quy định của ngân hàng.
-          </p>
+          <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
+            <li>Không chia sẻ OTP/PIN/mật khẩu cho bất kỳ ai, kể cả “nhân viên ngân hàng”.</li>
+            <li>Đặt mật khẩu mạnh và không dùng lại mật khẩu ở các ứng dụng khác.</li>
+            <li>Đổi PIN/mật khẩu ngay nếu nghi ngờ bị lộ thông tin.</li>
+          </ul>
         </Card>
-
-        {/* Cảnh báo bảo mật */}
-        <Card className="p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Bell className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Cảnh báo bảo mật</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Đăng nhập trên thiết bị mới
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Gửi thông báo / SMS khi phát hiện đăng nhập lạ
-              </p>
-            </div>
-            <Switch
-              checked={securityAlert.newDevice}
-              onCheckedChange={(checked) =>
-                setSecurityAlert((p) => ({ ...p, newDevice: checked }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Giao dịch giá trị lớn
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Cảnh báo khi giao dịch vượt hạn mức anh thiết lập
-              </p>
-            </div>
-            <Switch
-              checked={securityAlert.highValueTxn}
-              onCheckedChange={(checked) =>
-                setSecurityAlert((p) => ({ ...p, highValueTxn: checked }))
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                Thay đổi cài đặt bảo mật
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Thông báo khi có thay đổi mật khẩu, PIN, OTP…
-              </p>
-            </div>
-            <Switch
-              checked={securityAlert.changeSecurity}
-              onCheckedChange={(checked) =>
-                setSecurityAlert((p) => ({ ...p, changeSecurity: checked }))
-              }
-            />
-          </div>
-        </Card>
-
-        {/* Gợi ý khóa nhanh dịch vụ */}
-        <Card className="p-5 space-y-3 mb-4">
-          <div className="flex items-center gap-2 mb-1">
-            <AlertTriangle className="w-4 h-4 text-destructive" />
-            <h2 className="text-sm font-semibold">Khóa nhanh dịch vụ</h2>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Trong trường hợp nghi ngờ lộ thông tin hoặc bị mất điện thoại, anh
-            có thể tạm khóa nhanh các dịch vụ ngân hàng số. Vui lòng liên hệ
-            tổng đài hoặc chi nhánh gần nhất để được hỗ trợ mở lại.
-          </p>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() =>
-              toast.info(
-                "Tính năng khóa nhanh đang được mô phỏng, vui lòng liên hệ tổng đài trong thực tế."
-              )
-            }
-          >
-            Khóa nhanh dịch vụ (demo)
-          </Button>
-        </Card>
-
-        {/* Nút Lưu thay đổi */}
-        <div className="mb-6">
-          <Button className="w-full" onClick={handleSave}>
-            Lưu thay đổi
-          </Button>
-        </div>
       </div>
     </div>
   );

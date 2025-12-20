@@ -21,6 +21,7 @@ import { firebaseAuth } from "@/lib/firebase";
 import { getPrimaryAccount } from "@/services/accountService";
 import { getCurrentUserProfile } from "@/services/userService";
 import type { AppUserProfile } from "@/services/authService";
+import { onAuthStateChanged, type User } from "firebase/auth";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -32,6 +33,10 @@ const Home = () => {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingBalance, setLoadingBalance] = useState(true);
 
+  // ✅ auth ready + user hiện tại (fix reload mất currentUser)
+  const [authReady, setAuthReady] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(firebaseAuth.currentUser);
+
   // Tiện ích (giữ nguyên)
   const utilities = [
     { icon: Receipt, label: "Thanh toán hóa đơn", path: "/utilities/bill" },
@@ -41,47 +46,76 @@ const Home = () => {
       path: "/utilities/phone",
     },
     { icon: Wifi, label: "Nạp data 4G", path: "/utilities/data" },
+    { icon: Shield, label: "Mua bảo hiểm", path: "/utilities/insurance" },
     { icon: Plane, label: "Vé máy bay", path: "/utilities/flight" },
     { icon: Film, label: "Vé xem phim", path: "/utilities/movie-booking" },
     { icon: Hotel, label: "Đặt phòng khách sạn", path: "/utilities/hotel-booking" },
   ];
 
-  // Lấy profile hiện tại (họ tên hiển thị)
+  // ✅ 1) Lắng nghe auth state để biết khi nào user hydrate xong sau reload
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const p = await getCurrentUserProfile();
-        setProfile(p);
-      } catch (error) {
-        console.error("Lỗi lấy profile:", error);
-      } finally {
-        setLoadingProfile(false);
-      }
-    };
-
-    fetchProfile();
+    const unsub = onAuthStateChanged(firebaseAuth, (u) => {
+      setAuthUser(u);
+      setAuthReady(true);
+    });
+    return () => unsub();
   }, []);
 
-  // Lấy tài khoản chính để hiển thị số dư
+  // ✅ 2) Khi auth đã ready và có user -> fetch profile + balance
   useEffect(() => {
-    const fetchBalance = async () => {
-      try {
-        const user = firebaseAuth.currentUser;
-        if (!user) {
+    let cancelled = false;
+
+    const run = async () => {
+      // Chưa ready thì giữ loading
+      if (!authReady) return;
+
+      // Ready nhưng không có user -> coi như chưa đăng nhập (tùy app bạn có guard route hay không)
+      if (!authUser) {
+        if (!cancelled) {
+          setProfile(null);
+          setBalance(0);
+          setLoadingProfile(false);
           setLoadingBalance(false);
-          return;
         }
-        const acc = await getPrimaryAccount(user.uid);
+        return;
+      }
+
+      if (!cancelled) {
+        setLoadingProfile(true);
+        setLoadingBalance(true);
+      }
+
+      try {
+        const [p, acc] = await Promise.all([
+          getCurrentUserProfile(),
+          getPrimaryAccount(authUser.uid),
+        ]);
+
+        if (cancelled) return;
+
+        setProfile(p);
         setBalance(acc?.balance ?? 0);
       } catch (error) {
-        console.error("Lỗi lấy số dư:", error);
+        console.error("Home fetch error:", error);
+        if (!cancelled) {
+          // fallback an toàn
+          setProfile(null);
+          setBalance(0);
+        }
       } finally {
-        setLoadingBalance(false);
+        if (!cancelled) {
+          setLoadingProfile(false);
+          setLoadingBalance(false);
+        }
       }
     };
 
-    fetchBalance();
-  }, []);
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, authUser?.uid]);
 
   const formatMoney = (value: number): string => {
     try {
@@ -92,7 +126,6 @@ const Home = () => {
   };
 
   const displayName = profile?.username || "Khách hàng";
-
   const displayBalance = formatMoney(balance);
 
   return (
@@ -106,6 +139,7 @@ const Home = () => {
               {loadingProfile ? "Đang tải..." : displayName}
             </h2>
           </div>
+
           <Button
             variant="ghost"
             size="icon"
@@ -120,9 +154,7 @@ const Home = () => {
         <Card className="p-5 bg-white/95 backdrop-blur-sm">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">
-                Số dư tài khoản
-              </p>
+              <p className="text-sm text-muted-foreground mb-1">Số dư tài khoản</p>
               <div className="flex items-center gap-2">
                 <h3 className="text-3xl font-bold text-primary">
                   {loadingBalance
@@ -131,10 +163,13 @@ const Home = () => {
                     ? displayBalance
                     : "••••••••"}
                 </h3>
+
                 {!loadingBalance && (
                   <button
-                    onClick={() => setShowBalance(!showBalance)}
+                    type="button"
+                    onClick={() => setShowBalance((p) => !p)}
                     className="text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Ẩn/hiện số dư"
                   >
                     {showBalance ? <Eye size={20} /> : <EyeOff size={20} />}
                   </button>
@@ -154,7 +189,7 @@ const Home = () => {
       {/* Utilities Section */}
       <div className="p-6">
         <h3 className="text-lg font-semibold mb-4 text-foreground">Tiện ích</h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           {utilities.map((utility, index) => {
             const Icon = utility.icon;
             return (
@@ -174,7 +209,6 @@ const Home = () => {
           })}
         </div>
       </div>
-      {/* Không còn phần "Giao dịch gần đây" ở Trang chủ */}
     </div>
   );
 };
