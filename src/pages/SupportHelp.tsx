@@ -451,7 +451,7 @@ const SupportHelp = () => {
             </div>
             <ExternalLink className="w-4 h-4 text-muted-foreground" />
           </Button>
-
+        </Card>
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold mb-1">
             Chi nhánh, ATM & thông tin cộng đồng
