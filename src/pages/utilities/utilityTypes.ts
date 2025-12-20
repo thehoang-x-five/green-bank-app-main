@@ -5,9 +5,7 @@ export type UtilityType =
   | "data"
   | "flight"
   | "movie"
-  | "hotel"
-  | "insurance"
-  | "all";
+  | "hotel";
 
 export type UtilityFlow =
   | "bill"

@@ -8,11 +8,9 @@ import {
   Receipt,
   Smartphone,
   Wifi,
-  Shield,
   Plane,
   Film,
   Hotel,
-  MoreHorizontal,
   ArrowUpRight,
   QrCode,
   Eye,
@@ -37,15 +35,16 @@ const Home = () => {
   // Tiện ích (giữ nguyên)
   const utilities = [
     { icon: Receipt, label: "Thanh toán hóa đơn", path: "/utilities/bill" },
-    { icon: Smartphone, label: "Nạp tiền điện thoại", path: "/utilities/phone" },
+    {
+      icon: Smartphone,
+      label: "Nạp tiền điện thoại",
+      path: "/utilities/phone",
+    },
     { icon: Wifi, label: "Nạp data 4G", path: "/utilities/data" },
-    { icon: Shield, label: "Mua bảo hiểm", path: "/utilities/insurance" },
     { icon: Plane, label: "Vé máy bay", path: "/utilities/flight" },
     { icon: Film, label: "Vé xem phim", path: "/utilities/movie-booking" },
     { icon: Hotel, label: "Đặt phòng khách sạn", path: "/utilities/hotel-booking" },
-    { icon: MoreHorizontal, label: "Xem tất cả", path: "/utilities/all" },
   ];
-  
 
   // Lấy profile hiện tại (họ tên hiển thị)
   useEffect(() => {
@@ -102,9 +101,7 @@ const Home = () => {
       <div className="bg-gradient-to-br from-primary to-accent p-6 rounded-b-3xl shadow-lg">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <p className="text-primary-foreground/80 text-sm">
-              Xin chào,
-            </p>
+            <p className="text-primary-foreground/80 text-sm">Xin chào,</p>
             <h2 className="text-primary-foreground text-xl font-bold">
               {loadingProfile ? "Đang tải..." : displayName}
             </h2>
@@ -156,10 +153,8 @@ const Home = () => {
 
       {/* Utilities Section */}
       <div className="p-6">
-        <h3 className="text-lg font-semibold mb-4 text-foreground">
-          Tiện ích
-        </h3>
-        <div className="grid grid-cols-4 gap-4">
+        <h3 className="text-lg font-semibold mb-4 text-foreground">Tiện ích</h3>
+        <div className="grid grid-cols-3 gap-4">
           {utilities.map((utility, index) => {
             const Icon = utility.icon;
             return (

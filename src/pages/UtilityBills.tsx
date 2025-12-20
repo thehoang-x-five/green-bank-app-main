@@ -10,10 +10,9 @@ import {
   CreditCard,
   MapPin,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-
 import type {
   UtilityFormData,
   UtilityType,
@@ -21,7 +20,6 @@ import type {
   SeatClass,
   FlightOption,
 } from "./utilities/utilityTypes";
-import { MOCK_USER_PHONE, validatePhoneNumber } from "./utilities/utilityData";
 import {
   buildBillReceipt,
   buildDataReceipt,
@@ -31,6 +29,7 @@ import {
   buildPhoneReceipt,
 } from "./utilities/buildReceipt";
 
+import { detectTelcoByPhone, MOCK_USER_PHONE } from "./utilities/utilityData";
 import UtilityBill from "./utilities/UtilityBill";
 import UtilityMobilePhone from "./utilities/UtilityMobilePhone";
 import UtilityPhoneTopup from "./utilities/UtilityPhoneTopup";
@@ -39,73 +38,32 @@ import UtilityFlight from "./utilities/UtilityFlight";
 import UtilityMovie from "./utilities/UtilityMovie";
 import UtilityHotel from "./utilities/UtilityHotel";
 
-type ReceiptSource = "home" | "mobilePhone";
+type UtilityEntry = "home" | "bill" | "mobileBill" | "mobile3g4g";
 
-const headerConfig: Record<
-  UtilityType,
-  { title: string; subtitle: string; successMsg: string }
-> = {
-  bill: {
-    title: "Hóa đơn",
-    subtitle: "Thanh toán các loại hóa đơn điện, nước, di động",
-    successMsg: "Thanh toán hóa đơn thành công (demo)!",
-  },
-  mobilePhone: {
-    title: "Điện thoại di động",
-    subtitle: "Nạp tiền, mua 3G/4G và xem lịch sử gần đây",
-    successMsg: "",
-  },
-  phone: {
-    title: "Nạp tiền điện thoại",
-    subtitle: "Nạp tiền nhanh cho thuê bao di động",
-    successMsg: "Tạo lệnh nạp tiền điện thoại thành công (demo)!",
-  },
-  data: {
-    title: "Mua 3G/4G",
-    subtitle: "Mua gói data 3G/4G cho thuê bao di động",
-    successMsg: "Tạo lệnh mua gói 3G/4G thành công (demo)!",
-  },
-  flight: {
-    title: "Đặt vé máy bay",
-    subtitle: "Tra cứu, so sánh và chọn vé máy bay (demo)",
-    successMsg: "",
-  },
-  movie: {
-    title: "Mua vé xem phim",
-    subtitle: "Đặt vé xem phim tại rạp (demo)",
-    successMsg: "Tạo yêu cầu đặt vé xem phim thành công (demo)!",
-  },
-  hotel: {
-    title: "Đặt phòng khách sạn",
-    subtitle: "Đặt phòng khách sạn trong và ngoài nước (demo)",
-    successMsg: "Tạo yêu cầu đặt phòng khách sạn thành công (demo)!",
-  },
-  insurance: {
-    title: "Mua bảo hiểm",
-    subtitle: "Tính năng đang được phát triển (demo)",
-    successMsg: "Giao dịch bảo hiểm (demo)!",
-  },
-  all: {
-    title: "Tất cả tiện ích",
-    subtitle: "Danh sách các tiện ích khác (demo)",
-    successMsg: "Tiện ích (demo)!",
-  },
+type FlightUiHandle = {
+  goBack: () => boolean; // true = đã xử lý back trong Flight UI
 };
 
-const isUtilityType = (rawType: string | undefined): rawType is UtilityType =>
-  !!rawType && rawType in headerConfig;
-
-const UtilityBills = () => {
+export default function UtilityBills() {
   const navigate = useNavigate();
-  const { type } = useParams<{ type: UtilityType }>();
   const location = useLocation();
-  const currentType: UtilityType = isUtilityType(type) ? type : "bill";
-  const fromPage: string | null =
-    (location.state as { from?: string } | null)?.from ?? null;
-  const isMovieFlow = currentType === "movie";
-  const isHotelFlow = currentType === "hotel";
+  const flightUiRef = useRef<FlightUiHandle | null>(null);
 
-  const { title, subtitle, successMsg } = headerConfig[currentType];
+  // ✅ [PATCH-ENTRY] Đọc entry để phân biệt luồng navigate/back + header
+  const entry: UtilityEntry = (location.state as any)?.entry ?? "home";
+
+  // ✅ route: /utilities/:type
+  const { type } = useParams<{ type: UtilityType }>();
+  const routeType: UtilityType = (type as UtilityType) ?? "bill";
+
+  const [currentType, setCurrentType] = useState<UtilityType>(routeType);
+
+  const [billService, setBillService] = useState<
+    "electric" | "water" | "mobile" | null
+  >(null);
+  const [billSave, setBillSave] = useState(false);
+
+  const initTelco = detectTelcoByPhone(MOCK_USER_PHONE);
 
   const [formData, setFormData] = useState<UtilityFormData>({
     billType: "",
@@ -114,11 +72,11 @@ const UtilityBills = () => {
     billAmount: "",
 
     phoneNumber: MOCK_USER_PHONE,
-    telco: "",
+    telco: initTelco,
     topupAmount: "",
 
     dataPhone: MOCK_USER_PHONE,
-    dataTelco: "",
+    dataTelco: initTelco,
     dataPack: "",
 
     flightFrom: "",
@@ -126,7 +84,7 @@ const UtilityBills = () => {
     flightDate: "",
     flightReturnDate: "",
     flightSeatClass: "all" as SeatClass,
-    flightAdult: "1",
+    flightAdult: "0",
     flightChild: "0",
     flightInfant: "0",
 
@@ -160,35 +118,102 @@ const UtilityBills = () => {
     perks: string[];
   } | null>(null);
 
-  const isBillDetail = currentType === "bill" && billService !== null;
+  // ✅ [PATCH-ROUTE-SYNC] Sync state theo URL param
+  useEffect(() => {
+    if (routeType === currentType) return;
+    setCurrentType(routeType);
 
-  const resetBillDetail = () => {
-    setBillService(null);
-    setFormData((prev) => ({
-      ...prev,
-      billType: "",
-      billProvider: "",
-      customerCode: "",
-    }));
-    setBillSave(false);
+    // rời bill thì clear billService để không kẹt bill detail
+    if (routeType !== "bill") setBillService(null);
+  }, [routeType, currentType]);
+
+  // ✅ [PATCH-MOVIE-HOTEL-RESET] — khi đổi sang type khác thì reset step movie/hotel
+  useEffect(() => {
+    if (currentType !== "movie") setMovieStep(1);
+    if (currentType !== "hotel") {
+      setHotelStep(1);
+      setSelectedHotelRoom(null);
+    }
+  }, [currentType]);
+
+  // ✅ Helper điều hướng đúng route
+  const goToType = (
+    t: UtilityType,
+    opts?: { replace?: boolean; state?: any }
+  ) => {
+    navigate(`/utilities/${t}`, {
+      replace: opts?.replace ?? false,
+      state: opts?.state,
+    });
   };
 
-  const handleHeaderBack = () => {
-    if (currentType === "mobilePhone") {
-      navigate("/utilities/bill");
-      return;
-    }
-    if (currentType === "phone" || currentType === "data") {
-      if (fromPage === "mobilePhone") navigate("/utilities/mobilePhone");
-      else navigate("/home");
-      return;
-    }
-    navigate("/home");
-  };
+  // ✅ Header cho BILL DETAIL theo billService
+  const billDetailHeaderTitle =
+    billService === "electric"
+      ? "Thanh toán hóa đơn Điện"
+      : billService === "water"
+      ? "Thanh toán hóa đơn Nước"
+      : "Thanh toán hóa đơn";
 
-  const receiptSource: ReceiptSource =
-    fromPage === "mobilePhone" ? "mobilePhone" : "home";
+  // ✅ [PATCH-HEADER-DATA4G] xác định Data 4G/Nạp tiền (GIỮ LOGIC ANH ĐƯA)
+  const isData4GTopup = useMemo(() => {
+    return entry === "home" || entry === "mobileBill";
+  }, [entry]);
 
+  // ✅ [PATCH-3G4G-STICKY] chỉ bật sticky button ở màn data khi là Mua 3G/4G
+  const isMua3G4G = useMemo(() => {
+    return entry === "mobile3g4g";
+  }, [entry]);
+
+  const headerMeta = (() => {
+    switch (currentType) {
+      case "mobilePhone":
+        return {
+          title: "Điện thoại di động",
+          subtitle: "Nạp tiền, mua 3G/4G và xem lịch sử gần đây",
+        };
+
+      case "phone":
+        return {
+          title: "Nạp tiền điện thoại",
+          subtitle: "Nạp tiền nhanh cho thuê bao di động",
+        };
+
+      case "data": {
+        // ✅ [PATCH-HEADER-DATA4G] (đúng logic anh đưa)
+        return isData4GTopup
+          ? {
+              title: "Data 4G/Nạp tiền",
+              subtitle: "Nạp data 4G hoặc nạp tiền cho thuê bao (demo)",
+            }
+          : {
+              title: "Mua 3G/4G",
+              subtitle: "Mua gói data 3G/4G cho thuê bao di động",
+            };
+      }
+
+      case "flight":
+        return {
+          title: "Mua vé máy bay",
+          subtitle: "Tra cứu, so sánh và chọn chuyến bay (demo)",
+        };
+      case "movie":
+        return { title: "Mua vé xem phim", subtitle: "Đặt vé tại rạp (demo)" };
+      case "hotel":
+        return {
+          title: "Đặt phòng khách sạn",
+          subtitle: "Đặt phòng trong và ngoài nước (demo)",
+        };
+      case "bill":
+      default:
+        return {
+          title: "Thanh toán hóa đơn",
+          subtitle: "Thanh toán các hóa đơn điện, nước, di động",
+        };
+    }
+  })();
+
+  // ✅ [PATCH-MOVIE-HOTEL-HELPERS] — tính toán hiển thị (không ảnh hưởng luồng khác)
   const movieTickets = Math.min(
     10,
     Math.max(1, Number(formData.movieTickets || "1") || 1)
@@ -255,57 +280,45 @@ const UtilityBills = () => {
     if (currentType === "flight") return;
 
     if (currentType === "bill") {
-      if (!billService || !formData.billProvider || !formData.customerCode) {
-        toast.error(
-          "Vui lòng chọn dịch vụ, nhà cung cấp và nhập mã khách hàng"
-        );
-        return;
-      }
+      if (!billService) return;
       const result = buildBillReceipt({ billService, billSave, formData });
-      toast.success(successMsg);
       navigate("/utilities/result", { state: { result, source: "home" } });
       return;
     }
 
     if (currentType === "phone") {
-      if (!formData.phoneNumber || !formData.telco || !formData.topupAmount) {
-        toast.error(
-          "Vui lòng nhập số điện thoại, nhà mạng và số tiền nạp"
-        );
-        return;
-      }
-      if (!validatePhoneNumber(formData.phoneNumber)) {
-        toast.error(
-          "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0"
-        );
-        return;
-      }
       const result = buildPhoneReceipt(formData);
-      toast.success(successMsg);
-      navigate("/utilities/result", {
-        state: { result, source: receiptSource },
-      });
+      navigate("/utilities/result", { state: { result, source: "home" } });
       return;
     }
 
     if (currentType === "data") {
-      if (!formData.dataPhone || !formData.dataTelco || !formData.dataPack) {
-        toast.error(
-          "Vui lòng nhập số điện thoại, nhà mạng và gói data"
-        );
-        return;
-      }
-      if (!validatePhoneNumber(formData.dataPhone)) {
-        toast.error(
-          "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0"
-        );
-        return;
-      }
       const result = buildDataReceipt(formData);
-      toast.success(successMsg);
-      navigate("/utilities/result", {
-        state: { result, source: receiptSource },
-      });
+      navigate("/utilities/result", { state: { result, source: "home" } });
+      return;
+    }
+
+    if (currentType === "flight") return;
+
+    // ✅ [PATCH-MOVIE-HOTEL-SUBMIT] — thay luồng movie/hotel theo 3 bước (chỉ áp dụng cho 2 tiện ích này)
+    if (currentType === "movie") {
+      if (movieStep === 1) {
+        if (!isMovieReady) {
+          toast.error("Vui lòng nhập đầy đủ thông tin vé xem phim");
+          return;
+        }
+        setMovieStep(2);
+        return;
+      }
+        return;
+      }
+      return;
+    }
+
+        return;
+      }
+        return;
+      }
       return;
     }
 
@@ -332,147 +345,98 @@ const UtilityBills = () => {
         !formData.hotelCheckOut
       ) {
         toast.error("Vui lòng nhập đủ thành phố và ngày nhận / trả phòng");
+    if (currentType === "flight") {
+      const handled = flightUiRef.current?.goBack?.() ?? false;
+      if (handled) return;
+    }
+
+    if (currentType === "bill" && billService) {
+      setBillService(null);
+      return;
+    }
+
+    if (currentType === "mobilePhone") {
+      if (entry === "bill") goToType("bill");
+      else navigate("/home");
+      return;
+    }
+
+    // ✅ [PATCH-BACK-MERGE-1-2] phone/data: nếu vào từ mobile (bill / 3g4g) => về mobilePhone, render liền (không trắng)
+    if (currentType === "phone" || currentType === "data") {
+      if (entry === "mobileBill" || entry === "mobile3g4g") {
+        // 1) Điều hướng SPA như bình thường (GIỮ LUỒNG)
+        navigate("/utilities/mobilePhone", {
+          replace: true,
+          state: { entry: "bill", _t: Date.now() },
+        });
+
+        // 2) Watchdog: nếu router đổi URL nhưng UI MobilePhone không render (bị trắng)
+        //    thì tự động hard-redirect để người dùng KHÔNG phải tự reload.
+        setTimeout(() => {
+          const isAtMobilePhone = window.location.pathname.endsWith(
+            "/utilities/mobilePhone"
+          );
+          const hasRendered = !!document.getElementById(
+            "utility-mobilephone-screen"
+          );
+
+          if (isAtMobilePhone && !hasRendered) {
+            // ✅ chỉ chạy khi bị lỗi trắng
+            window.location.replace("/utilities/mobilePhone");
+          }
+        }, 50);
+
         return;
       }
-      setHotelStep(2);
+
+      navigate("/home");
       return;
     }
 
     navigate("/home");
   };
 
-  const content = useMemo(() => {
-    switch (currentType) {
-      case "bill":
-        return (
-          <UtilityBill
-            formData={formData}
-            setFormData={setFormData}
-            billService={billService}
-            setBillService={setBillService}
-            billSave={billSave}
-            setBillSave={setBillSave}
-            onGoMobilePhone={() => navigate("/utilities/mobilePhone")}
-          />
-        );
-      case "mobilePhone":
-        return (
-          <UtilityMobilePhone
-            onGoTopup={() =>
-              navigate("/utilities/phone", { state: { from: "mobilePhone" } })
-            }
-            onGo3G4G={() =>
-              navigate("/utilities/data", {
-                state: { from: "mobilePhone", entry: "mobile3g4g" },
-              })
-            }
-            onGoData4G={() =>
-              navigate("/utilities/data", { state: { from: "mobilePhone" } })
-            }
-          />
-        );
-      case "phone":
-        return (
-          <UtilityPhoneTopup formData={formData} setFormData={setFormData} />
-        );
-      case "data":
-        return (
-          <UtilityDataPack formData={formData} setFormData={setFormData} />
-        );
-      case "flight":
-        return (
-          <UtilityFlight
-            formData={formData}
-            setFormData={setFormData}
-            onConfirm={(flight) => {
-              setSelectedFlight(flight);
-              const result = buildFlightReceipt({
-                selectedFlight: flight,
-                formData,
-              });
-              toast.success("Đặt vé máy bay (demo) thành công!");
-              navigate("/utilities/result", {
-                state: { result, source: "home" },
-              });
-            }}
-          />
-        );
-      case "movie":
-        return (
-          <UtilityMovie
-            formData={formData}
-            setFormData={setFormData}
-            showErrors={showMovieErrors}
-          />
-        );
-      case "hotel":
-        return (
-          <UtilityHotel
-            formData={formData}
-            setFormData={setFormData}
-            showErrors={showHotelErrors}
-          />
-        );
-      default:
-        return (
-          <p className="text-sm text-muted-foreground">
-            Tính năng này đang được nhóm phát triển, màn hình hiện tại chỉ mang
-            tính minh họa (demo).
-          </p>
-        );
+  const renderContent = () => {
+    if (currentType === "bill") {
+      return (
+        <UtilityBill
+          formData={formData}
+          setFormData={setFormData}
+          billService={billService}
+          setBillService={setBillService}
+          billSave={billSave}
+          setBillSave={setBillSave}
+          onGoMobilePhone={() => {
+            goToType("mobilePhone", { state: { entry: "bill" } });
+            setBillService("mobile");
+          }}
+        />
+      );
     }
-  }, [
-    currentType,
-    formData,
-    billService,
-    billSave,
-    navigate,
-    showMovieErrors,
-    showHotelErrors,
-  ]);
 
-  if (isBillDetail) {
-    const label =
-      billService === "electric"
-        ? "Điện"
-        : billService === "water"
-        ? "Nước"
-        : "Điện thoại di động";
+    if (currentType === "mobilePhone") {
+      return (
+        <UtilityMobilePhone
+          onGoTopup={() =>
+            goToType("phone", { state: { entry: "mobileBill" } })
+          }
+          onGo3G4G={() => goToType("data", { state: { entry: "mobile3g4g" } })}
+          onGoData4G={() =>
+            goToType("data", { state: { entry: "mobileBill" } })
+          }
+        />
+      );
+    }
 
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="mx-auto w-full max-w-4xl px-0 md:px-6 py-4">
-          <Card className="rounded-none md:rounded-2xl md:shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-br from-primary to-accent text-primary-foreground px-4 md:px-6 py-3 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={resetBillDetail}
-                className="flex items-center gap-1 text-sm font-medium hover:bg-white/10 rounded-full px-3 py-1"
-              >
-                <ArrowLeft size={18} />
-                <span>Dịch vụ</span>
-              </button>
-              <p className="text-sm md:text-base font-semibold">{label}</p>
-              <button
-                type="button"
-                onClick={resetBillDetail}
-                className="text-sm font-medium hover:bg-white/10 rounded-full px-3 py-1"
-              >
-                Hủy
-              </button>
-            </div>
+    if (currentType === "phone") {
+      return (
+        <UtilityPhoneTopup formData={formData} setFormData={setFormData} />
+      );
+    }
 
-            <form
-              onSubmit={handleSubmit}
-              className="bg-background px-4 md:px-6 py-4 md:py-6 space-y-6"
-            >
-              {content}
-            </form>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+    if (currentType === "data") {
+      return <UtilityDataPack formData={formData} setFormData={setFormData} />;
+    }
 
   if (isMovieFlow) {
     const formId = "movie-ticket-form";
@@ -481,6 +445,21 @@ const UtilityBills = () => {
       { label: "Xác nhận", icon: CheckCircle2, step: 2 },
       { label: "Thanh toán", icon: CreditCard, step: 3 },
     ];
+    if (currentType === "flight") {
+      return (
+        <UtilityFlight
+          ref={flightUiRef}
+          formData={formData}
+          setFormData={setFormData}
+          onConfirm={(selectedFlight) => {
+            const result = buildFlightReceipt({ selectedFlight, formData });
+            navigate("/utilities/result", {
+              state: { result, source: "home" },
+            });
+          }}
+        />
+      );
+    }
 
     const isStep1 = movieStep === 1;
     const isStep2 = movieStep === 2;
@@ -1035,7 +1014,36 @@ const UtilityBills = () => {
                 )}
               </div>
             </Card>
+  // Bill detail branch
+  if (currentType === "bill" && billService) {
+    return (
+      <div className="min-h-screen bg-background pb-20">
+        <div className="bg-gradient-to-br from-primary to-accent px-6 pb-8 pt-6">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            >
+              <ArrowLeft size={24} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-primary-foreground">
+                {billDetailHeaderTitle}
+              </h1>
+              <p className="text-sm text-primary-foreground/80">
+                {headerMeta.subtitle}
+              </p>
+            </div>
           </div>
+        </div>
+
+        <div className="px-6 -mt-4">
+          <Card className="p-6 rounded-2xl">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {content}
+            </form>
+          </Card>
         </div>
       </div>
     );
@@ -1044,33 +1052,64 @@ const UtilityBills = () => {
   return (
     <div
       className={`min-h-screen bg-background ${
-        currentType === "flight" ? "pb-6" : "pb-20"
+        currentType === "phone"
+          ? "pb-32"
+          : currentType === "data" && isMua3G4G
+          ? "pb-32"
+          : currentType === "flight"
+          ? "pb-6"
+          : "pb-20"
       }`}
     >
-      <div className="bg-gradient-to-br from-primary to-accent p-6 pb-8">
+      {/* Header */}
+      <div className="bg-gradient-to-br from-primary to-accent px-6 pb-8 pt-6">
         <div className="flex items-center gap-4">
           <button
-            onClick={handleHeaderBack}
+            type="button"
+            onClick={handleBack}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
           >
             <ArrowLeft size={24} />
           </button>
+
           <div>
             <h1 className="text-xl font-bold text-primary-foreground">
-              {title}
+              {headerMeta.title}
             </h1>
-            <p className="text-sm text-primary-foreground/80">{subtitle}</p>
+            <p className="text-sm text-primary-foreground/80">
+              {headerMeta.subtitle}
+            </p>
           </div>
         </div>
       </div>
 
+      {/* Content */}
       <div className="px-6 -mt-4">
-        <Card className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <Card className="p-6 rounded-2xl">
+          <form
+            id="utility-main-form"
+            onSubmit={handleSubmit}
+            className="space-y-4"
+          >
             {content}
           </form>
         </Card>
       </div>
+
+      {/* Sticky bottom button — cho Nạp tiền điện thoại và Mua 3G/4G */}
+      {(currentType === "phone" || (currentType === "data" && isMua3G4G)) && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <Button
+              form="utility-main-form"
+              type="submit"
+              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+            >
+              Tiếp tục
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
