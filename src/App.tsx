@@ -7,13 +7,11 @@ import { useParams } from "react-router-dom";
 import type { UtilityType } from "@/pages/utilities/utilityTypes";
 import DevSeedOfficersPage from "@/pages/DevSeedOfficers";
 
-// ✅ [PATCH-ADD-TRANSFER-BIOMETRIC] thêm từ code (2)
+// Transfer pages
 import TransferBiometricConfirm from "@/pages/TransferBiometricConfirm";
-
-// ✅ [PATCH-ADD-TRANSFER-OTP] thêm từ code (2)
 import TransferOtpConfirm from "@/pages/TransferOtpConfirm";
 
-// ✅ [PATCH-ADD-PAYMENT-DEPOSIT-WITHDRAW] thêm từ code (2)
+// Payment account pages
 import PaymentAccountDeposit from "@/pages/PaymentAccountDeposit";
 import PaymentAccountWithdraw from "@/pages/PaymentAccountWithdraw";
 
@@ -59,9 +57,6 @@ import UtilityConfirmPayment from "@/pages/utilities/UtilityConfirmPayment";
 
 import BottomNav from "@/components/BottomNav";
 
-import PaymentAccountDeposit from "@/pages/PaymentAccountDeposit";
-import PaymentAccountWithdraw from "@/pages/PaymentAccountWithdraw";
-
 // Officer area pages
 import OfficerDashboard from "@/pages/OfficerDashboard";
 import OfficerCustomersPage from "@/pages/OfficerCustomersPage";
@@ -74,14 +69,12 @@ import OfficerTransactionsPage from "@/pages/OfficerTransactionsPage";
 import OfficerEKYCPage from "@/pages/OfficerEKYCPage";
 import OfficerEKYCDetailPage from "@/pages/OfficerEKYCDetailPage";
 
-// 🔹 MÀN XÁC THỰC OTP CHUYỂN TIỀN
-import TransferOtpConfirm from "@/pages/TransferOtpConfirm";
+const queryClient = new QueryClient();
 
 const UtilitiesShell = () => {
   const { type } = useParams<{ type: UtilityType }>();
   const hideBottomNav = type === "mobilePhone";
 
-const queryClient = new QueryClient();
   return (
     <>
       <UtilityBills />
@@ -435,37 +428,6 @@ const App = () => (
           <Route
             path="/officer/ekyc/:id"
             element={<OfficerEKYCDetailPage />}
-          />
-          <Route
-            path="/transfer/biometric"
-            element={
-              <>
-                <TransferBiometricConfirm />
-                <BottomNav />
-              </>
-            }
-          />
-
-          <Route path="/transfer/otp" element={<TransferOtpConfirm />} />
-
-          {/* 🔹 Nạp / Rút tài khoản thanh toán (không dùng :id) */}
-          <Route
-            path="/accounts/payment/deposit"
-            element={
-              <>
-                <PaymentAccountDeposit />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/accounts/payment/withdraw"
-            element={
-              <>
-                <PaymentAccountWithdraw />
-                <BottomNav />
-              </>
-            }
           />
 
           {/* Catch-all */}
