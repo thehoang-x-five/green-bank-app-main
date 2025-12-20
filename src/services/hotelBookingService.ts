@@ -1,7 +1,15 @@
-import { collection, getDocs, query, where, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  addDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { get, ref, runTransaction, push, set } from "firebase/database";
 import { firebaseAuth, fbDb, firebaseRtdb } from "@/lib/firebase";
 import { getCurrentUserProfile } from "@/services/userService";
+import { requireBiometricForHighValueVnd } from "./biometricService";
 import type { HotelItem } from "./hotelService";
 import type { AppUserProfile } from "./authService";
 
@@ -49,7 +57,10 @@ async function isRoomAvailable(
 
     // Check if date ranges overlap
     // Overlap occurs if: requestCheckIn < existingCheckOut AND requestCheckOut > existingCheckIn
-    if (requestCheckIn < existingCheckOut && requestCheckOut > existingCheckIn) {
+    if (
+      requestCheckIn < existingCheckOut &&
+      requestCheckOut > existingCheckIn
+    ) {
       return false; // Room is booked during this period
     }
   }
@@ -103,7 +114,8 @@ export async function fetchUserAccounts(): Promise<UserAccount[]> {
   snap.forEach((child) => {
     const v = child.val();
     if (v?.uid === currentUser.uid) {
-      const balance = typeof v.balance === "number" ? v.balance : Number(v.balance || 0);
+      const balance =
+        typeof v.balance === "number" ? v.balance : Number(v.balance || 0);
       out.push({ accountNumber: child.key ?? "", balance });
     }
     return false;
@@ -124,7 +136,9 @@ export async function createHotelBooking(params: {
   const currentUser = firebaseAuth.currentUser;
   if (!currentUser) throw new Error("Bạn cần đăng nhập để thanh toán");
 
-  const profile: AppUserProfile | null = await getCurrentUserProfile().catch(() => null);
+  const profile: AppUserProfile | null = await getCurrentUserProfile().catch(
+    () => null
+  );
   if (!profile) {
     throw new Error("Không lấy được hồ sơ khách hàng");
   }
@@ -132,10 +146,14 @@ export async function createHotelBooking(params: {
     throw new Error("Tài khoản đăng nhập đang bị khóa, không thể giao dịch");
   }
   if (profile.ekycStatus !== "VERIFIED") {
-    throw new Error("Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực.");
+    throw new Error(
+      "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+    );
   }
   if (!profile.canTransact) {
-    throw new Error("Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng.");
+    throw new Error(
+      "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+    );
   }
 
   // Validate input parameters
@@ -160,6 +178,15 @@ export async function createHotelBooking(params: {
   }
 
   const total = params.room.pricePerNight * params.rooms * params.nights;
+
+  // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+  const biometricResult = await requireBiometricForHighValueVnd(total, {
+    reason: `Xác thực đặt phòng khách sạn ${total.toLocaleString("vi-VN")} VND`,
+  });
+
+  if (!biometricResult.success) {
+    throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
+  }
 
   let newBalance = 0;
 
@@ -187,19 +214,28 @@ export async function createHotelBooking(params: {
         return current; // Abort transaction
       }
       if (acc.status === "LOCKED") {
-        throw new Error("Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng.");
+        throw new Error(
+          "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+        );
       }
-      const balance = typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+      const balance =
+        typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
       if (balance < total) {
         throw new Error(
-          `Số dư không đủ. Cần ${total.toLocaleString("vi-VN")} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+          `Số dư không đủ. Cần ${total.toLocaleString(
+            "vi-VN"
+          )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
         );
       }
       return { ...acc, balance: balance - total };
     }).then((res) => {
       if (!res.committed) throw new Error("Giao dịch thất bại");
       const acc = res.snapshot.val() as Record<string, unknown>;
-      return typeof acc.balance === "number" ? acc.balance : Number((acc.balance as string) || 0);
+      return typeof acc.balance === "number"
+        ? acc.balance
+        : Number((acc.balance as string) || 0);
     });
   }
 

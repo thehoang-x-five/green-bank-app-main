@@ -1,4 +1,3 @@
-// src/services/mobilePhonePaymentService.ts
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
 import {
   ref,
@@ -9,6 +8,7 @@ import {
   serverTimestamp,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
+import { requireBiometricForHighValueVnd } from "./biometricService";
 
 /* ================== TYPES ================== */
 
@@ -98,7 +98,7 @@ export async function payPhoneTopup(
     // Check eKYC status
     if (profile.ekycStatus !== "VERIFIED") {
       throw new Error(
-        "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
       );
     }
 
@@ -120,6 +120,20 @@ export async function payPhoneTopup(
     // Validate account selection
     if (!params.accountId) {
       throw new Error("Vui lòng chọn tài khoản thanh toán");
+    }
+
+    // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+    const biometricResult = await requireBiometricForHighValueVnd(
+      params.topupAmount,
+      {
+        reason: `Xác thực nạp tiền điện thoại ${params.topupAmount.toLocaleString(
+          "vi-VN"
+        )} VND`,
+      }
+    );
+
+    if (!biometricResult.success) {
+      throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
     }
 
     // Handle account transaction and balance deduction
@@ -251,7 +265,7 @@ export async function payDataPack(
     // Check eKYC status
     if (profile.ekycStatus !== "VERIFIED") {
       throw new Error(
-        "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
       );
     }
 
@@ -273,6 +287,20 @@ export async function payDataPack(
     // Validate account selection
     if (!params.accountId) {
       throw new Error("Vui lòng chọn tài khoản thanh toán");
+    }
+
+    // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+    const biometricResult = await requireBiometricForHighValueVnd(
+      params.packPrice,
+      {
+        reason: `Xác thực mua gói data ${params.packPrice.toLocaleString(
+          "vi-VN"
+        )} VND`,
+      }
+    );
+
+    if (!biometricResult.success) {
+      throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
     }
 
     // Handle account transaction and balance deduction

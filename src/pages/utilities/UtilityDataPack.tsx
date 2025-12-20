@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
+import { useEkycCheck } from "@/hooks/useEkycCheck";
 import {
   payDataPack,
   payPhoneTopup,
@@ -77,6 +78,7 @@ function PromoBanners() {
 export default function UtilityDataPack({ formData, setFormData }: Props) {
   const navigate = useNavigate();
   const { account } = useUserAccount();
+  const { isVerified } = useEkycCheck();
 
   // ✅ Đọc entry để phân biệt Data 4G/Nạp tiền vs Mua 3G/4G
   const location = useLocation() as {
@@ -512,6 +514,14 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
       return;
     }
 
+    // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
+    if (!isVerified) {
+      toast.error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
+      return;
+    }
+
     // Set selected pack and show payment modal
     setSelectedPack(pack);
     setShowPaymentModal(true);
@@ -523,6 +533,14 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
     // Validate phone number
     if (!validatePhoneNumber(formData.phoneNumber)) {
       toast.error("Vui lòng nhập số điện thoại hợp lệ");
+      return;
+    }
+
+    // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
+    if (!isVerified) {
+      toast.error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
       return;
     }
 

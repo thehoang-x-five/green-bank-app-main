@@ -1,4 +1,3 @@
-// src/pages/utilities/UtilityPhoneTopup.tsx
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +6,7 @@ import { Check, ChevronDown, Phone, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
+import { useEkycCheck } from "@/hooks/useEkycCheck";
 import { useNavigate } from "react-router-dom";
 import { payPhoneTopup } from "@/services/mobilePhonePaymentService";
 import { fbAuth, fbRtdb } from "@/lib/firebase";
@@ -62,6 +62,7 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
   const navigate = useNavigate();
   const [openTelco, setOpenTelco] = useState(false);
   const { account } = useUserAccount();
+  const { isVerified } = useEkycCheck();
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -153,6 +154,14 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
 
     if (!formData.topupAmount || Number(formData.topupAmount) <= 0) {
       toast.error("Vui lòng chọn mệnh giá nạp");
+      return;
+    }
+
+    // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
+    if (!isVerified) {
+      toast.error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
       return;
     }
 

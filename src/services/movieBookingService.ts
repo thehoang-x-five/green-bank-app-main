@@ -1,5 +1,12 @@
 import { fbDb, fbAuth, fbRtdb } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  doc,
+  updateDoc,
+  arrayUnion,
+} from "firebase/firestore";
 import {
   ref,
   get,
@@ -8,6 +15,7 @@ import {
   set,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
+import { requireBiometricForHighValueVnd } from "./biometricService";
 
 export interface CreateMovieBookingParams {
   cinemaId: string;
@@ -62,7 +70,7 @@ export async function createMovieBooking(
   // Check eKYC status
   if (profile.ekycStatus !== "VERIFIED") {
     throw new Error(
-      "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+      "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
     );
   }
 
@@ -71,6 +79,20 @@ export async function createMovieBooking(
     throw new Error(
       "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
     );
+  }
+
+  // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+  const biometricResult = await requireBiometricForHighValueVnd(
+    params.totalAmount,
+    {
+      reason: `Xác thực đặt vé xem phim ${params.totalAmount.toLocaleString(
+        "vi-VN"
+      )} VND`,
+    }
+  );
+
+  if (!biometricResult.success) {
+    throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
   }
 
   // Handle account transaction in Realtime Database

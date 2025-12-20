@@ -4,6 +4,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useMemo, useState, useEffect } from "react";
 import { useUserAccount } from "@/hooks/useUserAccount";
+import { useEkycCheck } from "@/hooks/useEkycCheck";
+import { toast } from "sonner";
 
 import type { BillService, UtilityFormData } from "./utilityTypes";
 import {
@@ -62,6 +64,7 @@ export default function UtilityBill({
   const [billProviderSearch, setBillProviderSearch] = useState("");
   const [showProviderError, setShowProviderError] = useState(false);
   const { account, userProfile } = useUserAccount();
+  const { isVerified } = useEkycCheck();
 
   const [providersFromDb, setProvidersFromDb] = useState<BillProvider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
@@ -380,6 +383,15 @@ export default function UtilityBill({
 
             if (!hasActiveBill || !billServiceForDb || !selectedProviderId) {
               e.preventDefault();
+              return;
+            }
+
+            // ✅ Kiểm tra eKYC trước khi thanh toán
+            if (!isVerified) {
+              e.preventDefault();
+              toast.error(
+                "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+              );
               return;
             }
 

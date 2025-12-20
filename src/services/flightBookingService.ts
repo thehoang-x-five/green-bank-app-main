@@ -8,6 +8,7 @@ import {
   serverTimestamp as rtdbServerTimestamp,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
+import { requireBiometricForHighValueVnd } from "./biometricService";
 
 import type {
   FlightOption,
@@ -274,7 +275,7 @@ export async function createFlightOrder(params: {
   // Check eKYC status
   if (profile.ekycStatus !== "VERIFIED") {
     throw new Error(
-      "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+      "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
     );
   }
 
@@ -287,6 +288,17 @@ export async function createFlightOrder(params: {
 
   // Calculate total amount
   const totalAmount = (selectedFlight.price ?? 0) * Math.max(paxTotal, 1);
+
+  // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+  const biometricResult = await requireBiometricForHighValueVnd(totalAmount, {
+    reason: `Xác thực thanh toán vé máy bay ${totalAmount.toLocaleString(
+      "vi-VN"
+    )} VND`,
+  });
+
+  if (!biometricResult.success) {
+    throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
+  }
 
   // Handle account transaction in Realtime Database
   let balanceAfter = 0;

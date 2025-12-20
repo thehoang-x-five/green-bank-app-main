@@ -1,4 +1,3 @@
-// src/services/utilityBillService.ts
 import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
 import {
   ref,
@@ -9,6 +8,7 @@ import {
   serverTimestamp,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
+import { requireBiometricForHighValueVnd } from "./biometricService";
 
 export type UtilityBillServiceType = "electric" | "water";
 
@@ -99,7 +99,7 @@ export async function payUserUtilityBill(params: {
     // Check eKYC status
     if (profile.ekycStatus !== "VERIFIED") {
       throw new Error(
-        "Tài khoản chưa hoàn tất định danh eKYC. Vui lòng liên hệ ngân hàng để xác thực."
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
       );
     }
 
@@ -130,6 +130,17 @@ export async function payUserUtilityBill(params: {
     // Validate account selection
     if (!params.accountId) {
       throw new Error("Vui lòng chọn tài khoản thanh toán");
+    }
+
+    // ✅ Biometric authentication for high-value transactions (>= 10 million VND)
+    const biometricResult = await requireBiometricForHighValueVnd(billAmount, {
+      reason: `Xác thực thanh toán hóa đơn ${billAmount.toLocaleString(
+        "vi-VN"
+      )} VND`,
+    });
+
+    if (!biometricResult.success) {
+      throw new Error(biometricResult.message || "Xác thực sinh trắc thất bại");
     }
 
     // Handle account transaction and balance deduction

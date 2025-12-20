@@ -1,10 +1,10 @@
-// src/pages/UtilityBills.tsx
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { useEkycCheck } from "@/hooks/useEkycCheck";
 import type {
   UtilityFormData,
   UtilityType,
@@ -50,6 +50,7 @@ export default function UtilityBills() {
   const navigate = useNavigate();
   const location = useLocation();
   const flightUiRef = useRef<FlightUiHandle | null>(null);
+  const { isVerified } = useEkycCheck();
 
   const entry: UtilityEntry = (location.state as any)?.entry ?? "home";
   const { type } = useParams<{ type: UtilityType }>();
@@ -362,6 +363,14 @@ export default function UtilityBills() {
         return;
       }
       if (movieStep === 3) {
+        // ✅ Kiểm tra eKYC trước khi thanh toán
+        if (!isVerified) {
+          toast.error(
+            "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+          );
+          return;
+        }
+
         const result = buildMovieReceipt(formData);
         navigate("/utilities/result", { state: { result, source: "home" } });
         return;
@@ -384,6 +393,14 @@ export default function UtilityBills() {
         return;
       }
       if (hotelStep === 3) {
+        // ✅ Kiểm tra eKYC trước khi thanh toán
+        if (!isVerified) {
+          toast.error(
+            "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+          );
+          return;
+        }
+
         const room = selectedHotelRoom || {
           name: "Phòng tiêu chuẩn",
           price: 850000,
@@ -458,6 +475,14 @@ export default function UtilityBills() {
           formData={formData}
           setFormData={setFormData}
           onConfirm={async (selectedFlight) => {
+            // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
+            if (!isVerified) {
+              toast.error(
+                "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+              );
+              return;
+            }
+
             // ✅ [FLIGHT-PAYMENT] Show payment modal instead of direct navigation
             setSelectedFlightForPayment(selectedFlight);
             setShowFlightPaymentModal(true);
