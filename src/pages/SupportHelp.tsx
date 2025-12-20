@@ -424,34 +424,7 @@ const SupportHelp = () => {
 
       <div className="px-6 -mt-4 space-y-4">
         {/* Chi nhánh / ATM (FE theo file 2 + gắn định vị từ file 1) */}
-        <Card className="p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Chi nhánh & ATM</h2>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Tìm điểm giao dịch gần bạn, xem giờ làm việc và điều hướng trên bản đồ.
-          </p>
-
-          <Button
-            variant="outline"
-            className="w-full justify-start gap-3"
-            onClick={handleFindBranch}
-            disabled={locating}
-          >
-            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-              <MapPin className="w-4 h-4 text-primary" />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-medium">Tìm chi nhánh / ATM gần bạn</p>
-              <p className="text-xs text-muted-foreground">
-                {locating ? "Đang lấy vị trí..." : "Lấy vị trí & tìm quanh bạn"}
-              </p>
-            </div>
-            <ExternalLink className="w-4 h-4 text-muted-foreground" />
-          </Button>
-        </Card>
+       
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold mb-1">
             Chi nhánh, ATM & thông tin cộng đồng
