@@ -19,7 +19,7 @@ import {
   buildMovieReceipt,
 } from "./utilities/buildReceipt";
 
-import { detectTelcoByPhone, MOCK_USER_PHONE } from "./utilities/utilityData";
+import { detectTelcoByPhone } from "./utilities/utilityData";
 import UtilityBill from "./utilities/UtilityBill";
 import UtilityMobilePhone from "./utilities/UtilityMobilePhone";
 import UtilityPhoneTopup from "./utilities/UtilityPhoneTopup";
@@ -56,7 +56,8 @@ export default function UtilityBills() {
   const [currentType, setCurrentType] = useState<UtilityType>(routeType);
   const [billService, setBillService] = useState<BillService | null>(null);
 
-  const initTelco = detectTelcoByPhone(MOCK_USER_PHONE);
+  // ✅ [AUTO-FILL-PHONE] Không khởi tạo số điện thoại với MOCK_USER_PHONE
+  // Để các component con tự động điền từ userProfile.phone
 
   // ✅ [FLIGHT-PAYMENT] State for flight payment
   const [showFlightPaymentModal, setShowFlightPaymentModal] = useState(false);
@@ -73,11 +74,11 @@ export default function UtilityBills() {
     billProvider: "",
     customerCode: "",
     billAmount: "",
-    phoneNumber: MOCK_USER_PHONE,
-    telco: initTelco,
+    phoneNumber: "",
+    telco: "",
     topupAmount: "",
-    dataPhone: MOCK_USER_PHONE,
-    dataTelco: initTelco,
+    dataPhone: "",
+    dataTelco: "",
     dataPack: "",
     flightFrom: "",
     flightTo: "",

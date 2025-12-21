@@ -36,7 +36,7 @@ const TOPUP_AMOUNTS = [
 
 export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
   const navigate = useNavigate();
-  const { account } = useUserAccount();
+  const { account, userProfile } = useUserAccount();
   const { isVerified } = useEkycCheck();
 
   // Payment modal state
@@ -45,6 +45,17 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // ✅ [AUTO-FILL-PHONE] Auto-fill số điện thoại từ userProfile khi component mount
+  useEffect(() => {
+    if (userProfile?.phone && !formData.phoneNumber) {
+      setFormData((prev) => ({
+        ...prev,
+        phoneNumber: userProfile.phone || "",
+        telco: detectTelcoByPhone(userProfile.phone || ""),
+      }));
+    }
+  }, [userProfile, formData.phoneNumber, setFormData]);
 
   // ✅ [PATCH-RESET-ON-UNMOUNT] Reset selections when component unmounts (back navigation)
   useEffect(() => {

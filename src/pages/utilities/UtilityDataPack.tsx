@@ -63,7 +63,7 @@ function PromoBanners() {
 
 export default function UtilityDataPack({ formData, setFormData }: Props) {
   const navigate = useNavigate();
-  const { account } = useUserAccount();
+  const { account, userProfile } = useUserAccount();
   const { isVerified } = useEkycCheck();
 
   // ✅ Đọc entry để phân biệt Data 4G/Nạp tiền vs Mua 3G/4G
@@ -86,6 +86,19 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
   // Data 4G/Nạp tiền: tab switch nội bộ, KHÔNG navigate sang /utilities/phone
   // =========================
   const [activeTab4G, setActiveTab4G] = useState<"data" | "phone">("data");
+
+  // ✅ [AUTO-FILL-PHONE] Auto-fill số điện thoại từ userProfile khi component mount
+  useEffect(() => {
+    if (userProfile?.phone && !formData.dataPhone && !formData.phoneNumber) {
+      setFormData((prev) => ({
+        ...prev,
+        dataPhone: userProfile.phone || "",
+        dataTelco: detectTelcoByPhone(userProfile.phone || ""),
+        phoneNumber: userProfile.phone || "",
+        telco: detectTelcoByPhone(userProfile.phone || ""),
+      }));
+    }
+  }, [userProfile, formData.dataPhone, formData.phoneNumber, setFormData]);
 
   // ✅ [PATCH-RESET-ON-UNMOUNT] Reset selections when component unmounts (back navigation)
   useEffect(() => {

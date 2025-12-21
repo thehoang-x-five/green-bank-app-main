@@ -463,7 +463,6 @@ export default function HotelBooking() {
               hotelRooms: rooms,
             },
             // Additional options for buildHotelReceipt
-            nights: nights || 1,
             roomName: selectedRoom.name,
             nightlyRate: selectedRoom.pricePerNight,
           },
