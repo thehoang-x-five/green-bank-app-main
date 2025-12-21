@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Phone, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
@@ -110,6 +110,18 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
   // Data 4G/Nạp tiền: tab switch nội bộ, KHÔNG navigate sang /utilities/phone
   // =========================
   const [activeTab4G, setActiveTab4G] = useState<"data" | "phone">("data");
+
+  // ✅ [PATCH-RESET-ON-UNMOUNT] Reset selections when component unmounts (back navigation)
+  useEffect(() => {
+    return () => {
+      // Reset form data when leaving the page
+      setFormData((prev) => ({
+        ...prev,
+        dataPack: "",
+        topupAmount: "",
+      }));
+    };
+  }, [setFormData]);
 
   // ✅ Giữ hàm goTab cũ cho trường hợp cần (nhưng Data4G thì không dùng)
   const goTab = (tab: "data" | "phone") => {
@@ -222,203 +234,254 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
     []
   );
 
+  // ✅ [PATCH-MUA3G4G-CONTINUE-BUTTON] Thêm state và handler cho nút Tiếp tục
+  const [selectedPackForContinue, setSelectedPackForContinue] = useState<{
+    id: string;
+    name: string;
+    price: number;
+    description?: string;
+  } | null>(null);
+
+  const handleContinuePayment = () => {
+    if (!selectedPackForContinue) {
+      toast.error("Vui lòng chọn gói cước");
+      return;
+    }
+
+    // Validate phone number
+    if (!validatePhoneNumber(formData.dataPhone)) {
+      toast.error("Vui lòng nhập số điện thoại hợp lệ");
+      return;
+    }
+
+    // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
+    if (!isVerified) {
+      toast.error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
+      return;
+    }
+
+    // Show payment modal
+    handleDataPackPayment(selectedPackForContinue);
+  };
+
   // ✅ [PATCH-MUA3G4G-UI-TUNE] chỉnh UI Mua 3G/4G theo yêu cầu mới
   if (isMua3G4G) {
     return (
-      <div className="space-y-6">
-        {/* Tài khoản nguồn */}
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Tài khoản nguồn</h3>
-          <Card className="p-4 rounded-2xl">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                {/* ✅ giảm size số tiền */}
-                <p className="text-xl font-bold text-foreground">
-                  {account
-                    ? `${account.balance.toLocaleString("vi-VN")} đ`
-                    : "0 đ"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Normal Account | {account?.accountNumber || "0862525038"}
-                </p>
+      <>
+        <div className="space-y-6">
+          {/* Tài khoản nguồn */}
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Tài khoản nguồn</h3>
+            <Card className="p-4 rounded-2xl">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  {/* ✅ giảm size số tiền */}
+                  <p className="text-xl font-bold text-foreground">
+                    {account
+                      ? `${account.balance.toLocaleString("vi-VN")} đ`
+                      : "0 đ"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Normal Account | {account?.accountNumber || "0862525038"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="text-emerald-700 font-semibold hover:opacity-80"
+                  onClick={() =>
+                    toast.message("Demo", {
+                      description: "Đổi tài khoản nguồn (demo)",
+                    })
+                  }
+                >
+                  Thay đổi
+                </button>
               </div>
-              <button
-                type="button"
-                className="text-emerald-700 font-semibold hover:opacity-80"
-                onClick={() =>
-                  toast.message("Demo", {
-                    description: "Đổi tài khoản nguồn (demo)",
-                  })
-                }
-              >
-                Thay đổi
-              </button>
-            </div>
-          </Card>
-        </div>
+            </Card>
+          </div>
 
-        {/* Thông tin thanh toán */}
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Thông tin thanh toán</h3>
-          <Card className="p-4 rounded-2xl space-y-4">
-            {/* Số điện thoại */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                Số điện thoại <span className="text-red-500">*</span>
-              </Label>
+          {/* Thông tin thanh toán */}
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Thông tin thanh toán</h3>
+            <Card className="p-4 rounded-2xl space-y-4">
+              {/* Số điện thoại */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Số điện thoại <span className="text-red-500">*</span>
+                </Label>
 
-              <div className="relative">
-                <Input
-                  value={formData.dataPhone}
-                  onChange={(e) => onChangePhone(e.target.value)}
-                  placeholder="Nhập số điện thoại"
-                  inputMode="numeric"
-                  className="h-11 pr-20"
-                />
+                <div className="relative">
+                  <Input
+                    value={formData.dataPhone}
+                    onChange={(e) => onChangePhone(e.target.value)}
+                    placeholder="Nhập số điện thoại"
+                    inputMode="numeric"
+                    className="h-11 pr-20"
+                  />
 
-                {formData.dataPhone?.length > 0 && (
+                  {formData.dataPhone?.length > 0 && (
+                    <button
+                      type="button"
+                      className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => onChangePhone("")}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    onClick={() => onChangePhone("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-center hover:bg-emerald-100"
+                    onClick={() =>
+                      toast.message("Demo", {
+                        description: "Mở danh bạ (demo)",
+                      })
+                    }
+                    aria-label="Chọn từ danh bạ"
                   >
-                    <X className="w-4 h-4" />
+                    <Phone className="w-4 h-4 text-emerald-700" />
                   </button>
-                )}
+                </div>
+              </div>
+
+              {/* Nhà mạng */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Nhà mạng <span className="text-red-500">*</span>
+                </Label>
 
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-center hover:bg-emerald-100"
-                  onClick={() =>
-                    toast.message("Demo", { description: "Mở danh bạ (demo)" })
-                  }
-                  aria-label="Chọn từ danh bạ"
+                  onClick={() => setOpenTelco(true)}
+                  className="w-full h-11 rounded-xl border px-4 flex items-center justify-between hover:bg-muted/30"
                 >
-                  <Phone className="w-4 h-4 text-emerald-700" />
+                  {/* ✅ text-sm giống input */}
+                  <span
+                    className={`text-sm ${
+                      canShowTelco ? "text-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    {telcoLabel}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
-            </div>
 
-            {/* Nhà mạng */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                Nhà mạng <span className="text-red-500">*</span>
-              </Label>
+              {/* Gói cước */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Gói cước <span className="text-red-500">*</span>
+                </Label>
 
-              <button
-                type="button"
-                onClick={() => setOpenTelco(true)}
-                className="w-full h-11 rounded-xl border px-4 flex items-center justify-between hover:bg-muted/30"
-              >
-                {/* ✅ text-sm giống input */}
-                <span
-                  className={`text-sm ${
-                    canShowTelco ? "text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {telcoLabel}
-                </span>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
+                <div className="space-y-3">
+                  {mua3g4gPacks.map((p) => {
+                    const selected = formData.dataPack === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          // Validate phone number
+                          if (!validatePhoneNumber(formData.dataPhone)) {
+                            toast.error("Vui lòng nhập số điện thoại hợp lệ");
+                            return;
+                          }
 
-            {/* Gói cước */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                Gói cước <span className="text-red-500">*</span>
-              </Label>
+                          // Set form data and selected pack
+                          setFormData((prev) => ({
+                            ...prev,
+                            dataPack: p.id,
+                            dataTelco: detectTelcoByPhone(prev.dataPhone),
+                          }));
 
-              <div className="space-y-3">
-                {mua3g4gPacks.map((p) => {
-                  const selected = formData.dataPack === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        // Validate phone number
-                        if (!validatePhoneNumber(formData.dataPhone)) {
-                          toast.error("Vui lòng nhập số điện thoại hợp lệ");
-                          return;
-                        }
+                          // ✅ Set selected pack for continue button
+                          setSelectedPackForContinue({
+                            id: p.id,
+                            name: p.name,
+                            price: p.price,
+                            description: p.subtitle,
+                          });
+                        }}
+                        className={`w-full rounded-xl border p-4 text-left transition-colors ${
+                          selected
+                            ? "border-emerald-600 bg-emerald-50"
+                            : "border-border bg-background hover:bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">
+                              {p.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {p.subtitle}
+                            </p>
+                          </div>
 
-                        // Set form data
-                        setFormData((prev) => ({
-                          ...prev,
-                          dataPack: p.id,
-                          dataTelco: detectTelcoByPhone(prev.dataPhone),
-                        }));
-
-                        // Show payment modal
-                        handleDataPackPayment({
-                          id: p.id,
-                          name: p.name,
-                          price: p.price,
-                          description: p.subtitle,
-                        });
-                      }}
-                      className={`w-full rounded-xl border p-4 text-left transition-colors ${
-                        selected
-                          ? "border-emerald-600 bg-emerald-50"
-                          : "border-border bg-background hover:bg-muted/30"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">
-                            {p.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {p.subtitle}
+                          <p className="text-sm font-semibold text-emerald-800">
+                            {p.price.toLocaleString("vi-VN")} đ
                           </p>
                         </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          </div>
 
-                        <p className="text-sm font-semibold text-emerald-800">
-                          {p.price.toLocaleString("vi-VN")} đ
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+          {/* Telco modal (demo) */}
+          {openTelco && (
+            <div className="fixed inset-0 z-40 bg-black/30 flex items-end justify-center">
+              <div className="w-full max-w-2xl bg-background rounded-t-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold">Chọn nhà mạng</p>
+                  <button
+                    type="button"
+                    className="rounded-full p-2 hover:bg-muted"
+                    onClick={() => setOpenTelco(false)}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {["VIETTEL", "VINAPHONE", "MOBIFONE"].map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="w-full flex items-center justify-between rounded-xl border px-4 py-3 hover:bg-muted/30"
+                    onClick={() => {
+                      toast.message("Demo", {
+                        description: `Chọn ${name} (demo)`,
+                      });
+                      setOpenTelco(false);
+                    }}
+                  >
+                    <span className="font-semibold">{name}</span>
+                  </button>
+                ))}
               </div>
             </div>
-          </Card>
+          )}
         </div>
 
-        {/* Telco modal (demo) */}
-        {openTelco && (
-          <div className="fixed inset-0 z-40 bg-black/30 flex items-end justify-center">
-            <div className="w-full max-w-2xl bg-background rounded-t-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="font-bold">Chọn nhà mạng</p>
-                <button
-                  type="button"
-                  className="rounded-full p-2 hover:bg-muted"
-                  onClick={() => setOpenTelco(false)}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {["VIETTEL", "VINAPHONE", "MOBIFONE"].map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className="w-full flex items-center justify-between rounded-xl border px-4 py-3 hover:bg-muted/30"
-                  onClick={() => {
-                    toast.message("Demo", {
-                      description: `Chọn ${name} (demo)`,
-                    });
-                    setOpenTelco(false);
-                  }}
-                >
-                  <span className="font-semibold">{name}</span>
-                </button>
-              ))}
+        {/* ✅ [PATCH-MUA3G4G-CONTINUE-BUTTON] Nút Tiếp tục chỉ hiện khi đã chọn gói */}
+        {selectedPackForContinue && (
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t">
+            <div className="max-w-4xl mx-auto px-4 py-3">
+              <Button
+                type="button"
+                onClick={handleContinuePayment}
+                className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              >
+                Tiếp tục
+              </Button>
             </div>
           </div>
         )}
-      </div>
+      </>
     );
   }
 

@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Check, ChevronDown, Phone, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
 import { useEkycCheck } from "@/hooks/useEkycCheck";
@@ -70,6 +70,17 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // ✅ [PATCH-RESET-ON-UNMOUNT] Reset selections when component unmounts (back navigation)
+  useEffect(() => {
+    return () => {
+      // Reset form data when leaving the page
+      setFormData((prev) => ({
+        ...prev,
+        topupAmount: "",
+      }));
+    };
+  }, [setFormData]);
 
   const telcoKey = useMemo(
     () => detectTelcoByPhone(formData.phoneNumber),
@@ -400,18 +411,20 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
         </div>
       )}
 
-      {/* Payment confirmation button */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <Button
-            type="button"
-            onClick={handlePaymentConfirm}
-            className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700"
-          >
-            Tiếp tục
-          </Button>
+      {/* Payment confirmation button - chỉ hiện khi đã chọn mệnh giá */}
+      {formData.topupAmount && Number(formData.topupAmount) > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <Button
+              type="button"
+              onClick={handlePaymentConfirm}
+              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+            >
+              Tiếp tục
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Payment Modal */}
       {showPaymentModal && (

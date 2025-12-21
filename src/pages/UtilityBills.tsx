@@ -115,16 +115,17 @@ export default function UtilityBills() {
     if (routeType === currentType) return;
     setCurrentType(routeType);
     if (routeType !== "bill") setBillService(null);
-  }, [routeType, currentType]);
+  }, [routeType, currentType, location.key]); // ✅ Add location.key to force re-sync
 
   // Reset steps when changing type
   useEffect(() => {
-    if (currentType !== "movie") setMovieStep(1);
-    if (currentType !== "hotel") {
+    // ✅ Use routeType directly instead of currentType
+    if (routeType !== "movie") setMovieStep(1);
+    if (routeType !== "hotel") {
       setHotelStep(1);
       setSelectedHotelRoom(null);
     }
-  }, [currentType]);
+  }, [routeType]); // ✅ Change dependency to routeType
 
   const isData4GTopup = useMemo(() => {
     return entry === "home" || entry === "mobileBill";
@@ -145,27 +146,29 @@ export default function UtilityBills() {
   };
 
   const handleBack = () => {
-    if (currentType === "flight") {
+    // ✅ Use routeType directly instead of currentType
+    if (routeType === "flight") {
       const handled = flightUiRef.current?.goBack?.() ?? false;
       if (handled) return;
     }
 
-    if (currentType === "bill" && billService) {
+    if (routeType === "bill" && billService) {
       setBillService(null);
       return;
     }
 
-    if (currentType === "mobilePhone") {
+    if (routeType === "mobilePhone") {
       if (entry === "bill") goToType("bill");
       else navigate("/home");
       return;
     }
 
-    if (currentType === "phone" || currentType === "data") {
+    if (routeType === "phone" || routeType === "data") {
       if (entry === "mobileBill" || entry === "mobile3g4g") {
+        // ✅ Navigate with key to force component re-render
         navigate("/utilities/mobilePhone", {
-          replace: true,
-          state: { entry: "bill", _t: Date.now() },
+          replace: false,
+          state: { entry: "bill", key: Date.now() },
         });
         return;
       }
@@ -285,7 +288,8 @@ export default function UtilityBills() {
   };
 
   const headerMeta = (() => {
-    switch (currentType) {
+    // ✅ Use routeType directly instead of currentType
+    switch (routeType) {
       case "mobilePhone":
         return {
           title: "Điện thoại di động",
@@ -330,7 +334,8 @@ export default function UtilityBills() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (currentType === "bill") {
+    // ✅ Use routeType directly instead of currentType
+    if (routeType === "bill") {
       if (!billService) return;
       const result = buildBillReceipt({ billService, formData });
       navigate("/utilities/result", { state: { result, source: "home" } });
@@ -339,12 +344,12 @@ export default function UtilityBills() {
 
     // Phone and data types are now handled by their respective components
     // with payment modals, so we don't need to handle submit here
-    if (currentType === "phone" || currentType === "data") {
+    if (routeType === "phone" || routeType === "data") {
       // Payment is handled in UtilityPhoneTopup and UtilityDataPack components
       return;
     }
 
-    if (currentType === "movie") {
+    if (routeType === "movie") {
       if (movieStep === 1) {
         const isReady =
           formData.movieCinema &&
@@ -377,7 +382,7 @@ export default function UtilityBills() {
       }
     }
 
-    if (currentType === "hotel") {
+    if (routeType === "hotel") {
       if (hotelStep === 1) {
         const isReady =
           formData.hotelCity && formData.hotelCheckIn && formData.hotelCheckOut;
@@ -417,7 +422,10 @@ export default function UtilityBills() {
   };
 
   const renderContent = () => {
-    if (currentType === "bill") {
+    // ✅ Use routeType directly instead of currentType to avoid stale state
+    const typeToRender = routeType;
+
+    if (typeToRender === "bill") {
       return (
         <UtilityBill
           formData={formData}
@@ -440,7 +448,7 @@ export default function UtilityBills() {
       );
     }
 
-    if (currentType === "mobilePhone") {
+    if (typeToRender === "mobilePhone") {
       return (
         <div id="utility-mobilephone-screen">
           <UtilityMobilePhone
@@ -458,17 +466,17 @@ export default function UtilityBills() {
       );
     }
 
-    if (currentType === "phone") {
+    if (typeToRender === "phone") {
       return (
         <UtilityPhoneTopup formData={formData} setFormData={setFormData} />
       );
     }
 
-    if (currentType === "data") {
+    if (typeToRender === "data") {
       return <UtilityDataPack formData={formData} setFormData={setFormData} />;
     }
 
-    if (currentType === "flight") {
+    if (typeToRender === "flight") {
       return (
         <UtilityFlight
           ref={flightUiRef}
@@ -492,7 +500,7 @@ export default function UtilityBills() {
       );
     }
 
-    if (currentType === "movie") {
+    if (typeToRender === "movie") {
       return (
         <UtilityMovie
           formData={formData}
@@ -502,7 +510,7 @@ export default function UtilityBills() {
       );
     }
 
-    if (currentType === "hotel") {
+    if (typeToRender === "hotel") {
       return (
         <UtilityHotel
           formData={formData}
@@ -518,7 +526,8 @@ export default function UtilityBills() {
   const content = renderContent();
 
   // Bill detail branch
-  if (currentType === "bill" && billService) {
+  // ✅ Use routeType directly instead of currentType
+  if (routeType === "bill" && billService) {
     const billDetailHeaderTitle =
       billService === "electric"
         ? "Thanh toán hóa đơn Điện"
@@ -562,11 +571,11 @@ export default function UtilityBills() {
   return (
     <div
       className={`min-h-screen bg-background ${
-        currentType === "phone"
+        routeType === "phone"
           ? "pb-32"
-          : currentType === "data" && isMua3G4G
+          : routeType === "data" && isMua3G4G
           ? "pb-32"
-          : currentType === "flight"
+          : routeType === "flight"
           ? "pb-6"
           : "pb-20"
       }`}
