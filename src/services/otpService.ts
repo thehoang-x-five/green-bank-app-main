@@ -60,7 +60,7 @@ export async function sendOtp(email: string, phone: string) {
     TEMPLATE_ID,
     {
       to_email: email, // phải trùng {{to_email}} trong template EmailJS
-      otp_code: otp,   // phải trùng {{otp_code}}
+      otp_code: otp, // phải trùng {{otp_code}}
     },
     PUBLIC_KEY
   );
@@ -95,4 +95,79 @@ export async function verifyOtp(email: string, otpInput: string) {
   // OTP đúng -> xóa để không dùng lại
   await remove(ref(firebaseRtdb, `otpSessions/${key}`));
   return { ok: true, message: "Xác thực OTP thành công." };
+}
+
+/* ================== TRANSACTION OTP (for utilities, flights, etc.) ================== */
+
+/**
+ * Send OTP for transaction confirmation
+ * Stores OTP in otps/{transactionId} node
+ */
+export async function sendOtpEmail(
+  userId: string,
+  transactionId: string,
+  transactionType: string
+): Promise<{
+  maskedEmail: string;
+  expireAt: number;
+  devOtpCode?: string;
+}> {
+  // Get user email
+  const userRef = ref(firebaseRtdb, `users/${userId}`);
+  const userSnap = await get(userRef);
+
+  if (!userSnap.exists()) {
+    throw new Error("Không tìm thấy thông tin người dùng");
+  }
+
+  const userData = userSnap.val() as { email?: string };
+  const email = userData.email;
+
+  if (!email) {
+    throw new Error("Không tìm thấy email người dùng");
+  }
+
+  // Generate OTP
+  const otp = generateNumericOtp(6);
+  const expireAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+  // Store OTP in database
+  await set(ref(firebaseRtdb, `otps/${transactionId}`), {
+    userId,
+    transactionId,
+    transactionType,
+    code: otp,
+    expireAt,
+    createdAt: Date.now(),
+  });
+
+  // Send email
+  try {
+    await emailjs.send(
+      SERVICE_ID,
+      TEMPLATE_ID,
+      {
+        to_email: email,
+        otp_code: otp,
+      },
+      PUBLIC_KEY
+    );
+  } catch (error) {
+    console.error("Failed to send OTP email:", error);
+    // Don't throw error, OTP is still stored in database
+  }
+
+  // Mask email for display
+  const [localPart, domain] = email.split("@");
+  const maskedLocal =
+    localPart.length > 2
+      ? localPart[0] + "***" + localPart[localPart.length - 1]
+      : "***";
+  const maskedEmail = `${maskedLocal}@${domain}`;
+
+  return {
+    maskedEmail,
+    expireAt,
+    devOtpCode: otp, // For development/testing only
+  };
 }

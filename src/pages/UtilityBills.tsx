@@ -14,11 +14,9 @@ import type {
 } from "./utilities/utilityTypes";
 import {
   buildBillReceipt,
-  buildDataReceipt,
   buildFlightReceipt,
   buildHotelReceipt,
   buildMovieReceipt,
-  buildPhoneReceipt,
 } from "./utilities/buildReceipt";
 
 import { detectTelcoByPhone, MOCK_USER_PHONE } from "./utilities/utilityData";
@@ -29,7 +27,6 @@ import UtilityDataPack from "./utilities/UtilityDataPack";
 import UtilityFlight from "./utilities/UtilityFlight";
 import UtilityMovie from "./utilities/UtilityMovie";
 import UtilityHotel from "./utilities/UtilityHotel";
-import { createFlightOrder } from "@/services/flightBookingService";
 import { fbAuth, fbRtdb } from "@/lib/firebase";
 import { ref, get } from "firebase/database";
 
@@ -232,7 +229,7 @@ export default function UtilityBills() {
     }
   };
 
-  // ✅ [FLIGHT-PAYMENT] Handle flight payment
+  // ✅ [FLIGHT-PAYMENT] Handle flight payment - Navigate to PIN screen
   const handleFlightPayment = async () => {
     if (!selectedFlightForPayment) {
       toast.error("Thông tin chuyến bay không đầy đủ");
@@ -244,47 +241,32 @@ export default function UtilityBills() {
       return;
     }
 
-    setProcessingFlightPayment(true);
-    try {
-      const result = await createFlightOrder({
-        selectedFlight: selectedFlightForPayment,
-        formData,
-        accountId: selectedFlightAccountId,
-      });
+    // Calculate total amount
+    const paxTotal =
+      (parseInt(formData.flightAdult || "0") || 0) +
+      (parseInt(formData.flightChild || "0") || 0) +
+      (parseInt(formData.flightInfant || "0") || 0);
+    const totalAmount =
+      (selectedFlightForPayment.price ?? 0) * Math.max(paxTotal, 1);
 
-      toast.success("Đặt vé máy bay thành công!");
+    // Close modal and navigate to PIN screen
+    setShowFlightPaymentModal(false);
 
-      // Navigate to result page with full booking info
-      const receiptResult = buildFlightReceipt({
-        selectedFlight: selectedFlightForPayment,
-        formData,
-      });
-
-      navigate("/utilities/result", {
-        state: {
-          result: {
-            ...receiptResult,
-            transactionId: result.transactionId,
-            details: [
-              ...receiptResult.details,
-              { label: "Mã đặt vé", value: result.orderId },
-              { label: "Mã giao dịch", value: result.transactionId },
-            ],
+    // Navigate to PIN screen with payment request
+    navigate("/utilities/pin", {
+      state: {
+        pendingRequest: {
+          type: "FLIGHT",
+          amount: totalAmount,
+          accountId: selectedFlightAccountId,
+          details: {
+            selectedFlight: selectedFlightForPayment,
+            formData: formData,
           },
-          source: "home",
         },
-      });
-    } catch (error) {
-      console.error("Flight payment error:", error);
-      if (error instanceof Error) {
-        toast.error(error.message);
-      } else {
-        toast.error("Thanh toán thất bại");
-      }
-    } finally {
-      setProcessingFlightPayment(false);
-      setShowFlightPaymentModal(false);
-    }
+        returnPath: "/utilities/flight",
+      },
+    });
   };
 
   const headerMeta = (() => {

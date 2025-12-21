@@ -8,12 +8,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
 import { useEkycCheck } from "@/hooks/useEkycCheck";
-import {
-  payDataPack,
-  payPhoneTopup,
-} from "@/services/mobilePhonePaymentService";
-import { fbAuth, fbRtdb } from "@/lib/firebase";
-import { ref, get } from "firebase/database";
 
 import type { UtilityFormData } from "./utilityTypes";
 import {
@@ -29,13 +23,6 @@ type Props = {
 };
 
 type FromSource = "mobilePhone" | null;
-
-interface Account {
-  id: string;
-  accountNumber: string;
-  accountType: string;
-  balance: number;
-}
 
 function PromoBanners() {
   const banners = [
@@ -89,18 +76,10 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
   // ✅ Mua 3G/4G (riêng) là entry=mobile3g4g
   const isMua3G4G = entry === "mobile3g4g";
 
-  // Payment modal state
+  // ✅ [PATCH-MUA3G4G-PAYMENT-MODAL] Thêm state cho modal thanh toán
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
-  const [processingPayment, setProcessingPayment] = useState(false);
-  const [selectedPack, setSelectedPack] = useState<{
-    id: string;
-    name: string;
-    price: number;
-    description?: string;
-  } | null>(null);
+  const [selectedAccountForPayment, setSelectedAccountForPayment] =
+    useState<string>("");
 
   // =========================
   // ✅ [PATCH-DATA4G-TABS-NO-NAV]
@@ -251,6 +230,12 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
       return;
     }
 
+    // Validate account
+    if (!account || !account.accountNumber) {
+      toast.error("Không tìm thấy tài khoản thanh toán");
+      return;
+    }
+
     // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
     if (!isVerified) {
       toast.error(
@@ -259,7 +244,37 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
       return;
     }
 
-    // Show payment modal
+    // ✅ [PATCH-MUA3G4G-PAYMENT-MODAL] Mở modal thanh toán thay vì navigate trực tiếp
+    setSelectedAccountForPayment(account.accountNumber);
+    setShowPaymentModal(true);
+  };
+
+  // ✅ [PATCH-MUA3G4G-PAYMENT-MODAL] Hàm xử lý thanh toán từ modal
+  const handlePaymentFromModal = () => {
+    console.log("=== handlePaymentFromModal called ===");
+    console.log("selectedPackForContinue:", selectedPackForContinue);
+    console.log("selectedAccountForPayment:", selectedAccountForPayment);
+    console.log("account:", account);
+    console.log("isVerified:", isVerified);
+    console.log("isMua3G4G:", isMua3G4G);
+
+    if (!selectedPackForContinue) {
+      console.log("ERROR: No pack selected");
+      toast.error("Vui lòng chọn gói cước");
+      return;
+    }
+
+    if (!selectedAccountForPayment) {
+      console.log("ERROR: No account selected");
+      toast.error("Vui lòng chọn tài khoản thanh toán");
+      return;
+    }
+
+    console.log("=== Closing modal and calling handleDataPackPayment ===");
+    // Close modal
+    setShowPaymentModal(false);
+
+    // Navigate to PIN screen
     handleDataPackPayment(selectedPackForContinue);
   };
 
@@ -361,13 +376,7 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                         key={p.id}
                         type="button"
                         onClick={() => {
-                          // Validate phone number
-                          if (!validatePhoneNumber(formData.dataPhone)) {
-                            toast.error("Vui lòng nhập số điện thoại hợp lệ");
-                            return;
-                          }
-
-                          // Set form data and selected pack
+                          // Set form data and selected pack (không validate ở đây)
                           setFormData((prev) => ({
                             ...prev,
                             dataPack: p.id,
@@ -425,6 +434,100 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
             </div>
           </div>
         )}
+
+        {/* ✅ [PATCH-MUA3G4G-PAYMENT-MODAL] Modal xác nhận thanh toán */}
+        {showPaymentModal && selectedPackForContinue && (
+          <div className="fixed inset-0 z-50 flex items-end bg-black/40">
+            <div className="bg-background w-full rounded-t-2xl p-6 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Xác nhận thanh toán</h2>
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground"
+                  onClick={() => setShowPaymentModal(false)}
+                >
+                  Đóng
+                </button>
+              </div>
+
+              {/* Payment Info Summary */}
+              <div className="space-y-2 rounded-xl border p-3 text-sm mb-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Số điện thoại</span>
+                  <span className="font-semibold">{formData.dataPhone}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Nhà mạng</span>
+                  <span className="font-semibold">
+                    {getTelcoLabel(detectTelcoByPhone(formData.dataPhone))}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Gói cước</span>
+                  <span className="font-semibold">
+                    {selectedPackForContinue.name}
+                  </span>
+                </div>
+                <div className="border-t pt-2 flex items-center justify-between text-base font-bold text-primary">
+                  <span>Tổng thanh toán</span>
+                  <span>
+                    {selectedPackForContinue.price.toLocaleString("vi-VN")} ₫
+                  </span>
+                </div>
+              </div>
+
+              {/* Account Selection */}
+              <div className="space-y-2 flex-1 overflow-y-auto">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">
+                  Tài khoản nguồn
+                </p>
+                {account && (
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-primary bg-primary/5 p-3 text-left"
+                    onClick={() =>
+                      setSelectedAccountForPayment(account.accountNumber)
+                    }
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-mono font-semibold">
+                          {account.accountNumber}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Normal Account
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-primary">
+                          {account.balance.toLocaleString("vi-VN")} ₫
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              {/* Payment Button */}
+              <div className="flex gap-3 mt-4 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPaymentModal(false)}
+                  className="flex-1"
+                >
+                  Hủy
+                </Button>
+                <Button
+                  onClick={handlePaymentFromModal}
+                  disabled={!selectedAccountForPayment}
+                  className="flex-1"
+                >
+                  Thanh toán
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -455,87 +558,74 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
     });
   };
 
-  // Load accounts for payment
-  const loadAccounts = async () => {
-    const user = fbAuth.currentUser;
-    if (!user) {
-      toast.error("Vui lòng đăng nhập");
-      navigate("/login");
-      return;
-    }
-
-    setLoadingAccounts(true);
-    try {
-      const accountsRef = ref(fbRtdb, "accounts");
-      const snap = await get(accountsRef);
-
-      if (!snap.exists()) {
-        setAccounts([]);
-        toast.error("Bạn chưa có tài khoản thanh toán");
-        setLoadingAccounts(false);
-        return;
-      }
-
-      const accountList: Account[] = [];
-      snap.forEach((child) => {
-        const v = child.val();
-        if (v?.uid === user.uid) {
-          const balance =
-            typeof v.balance === "number" ? v.balance : Number(v.balance || 0);
-          accountList.push({
-            id: child.key ?? "",
-            accountNumber: child.key ?? "",
-            accountType: v.accountType || "Tài khoản thanh toán",
-            balance: balance,
-          });
-        }
-        return false;
-      });
-
-      setAccounts(accountList);
-
-      if (accountList.length === 0) {
-        toast.error("Bạn chưa có tài khoản thanh toán");
-      } else {
-        setSelectedAccountId(accountList[0].id);
-      }
-    } catch (error) {
-      console.error("Error loading accounts:", error);
-      toast.error("Không thể tải danh sách tài khoản");
-    } finally {
-      setLoadingAccounts(false);
-    }
-  };
-
-  // Handle data pack payment (for Mua 3G/4G and Data 4G tab)
+  // Handle data pack payment (for Mua 3G/4G and Data 4G tab) - Navigate to PIN screen
   const handleDataPackPayment = async (pack: {
     id: string;
     name: string;
     price: number;
     description?: string;
   }) => {
+    console.log("=== handleDataPackPayment called ===");
+    console.log("pack:", pack);
+    console.log("formData.dataPhone:", formData.dataPhone);
+    console.log("account:", account);
+    console.log("isVerified:", isVerified);
+    console.log("isMua3G4G:", isMua3G4G);
+
     // Validate phone number
     const phoneToUse = isMua3G4G ? formData.dataPhone : formData.dataPhone;
     if (!validatePhoneNumber(phoneToUse)) {
+      console.log("ERROR: Invalid phone number");
       toast.error("Vui lòng nhập số điện thoại hợp lệ");
       return;
     }
 
-    // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
-    if (!isVerified) {
+    // Validate account
+    if (!account || !account.accountNumber) {
+      console.log("ERROR: No account found");
+      toast.error("Không tìm thấy tài khoản thanh toán");
+      return;
+    }
+
+    // ✅ [PATCH-MUA3G4G-NO-DOUBLE-EKYC-CHECK]
+    // Không cần kiểm tra eKYC ở đây vì đã kiểm tra trong handleContinuePayment() rồi
+    // Chỉ kiểm tra eKYC khi gọi trực tiếp từ Data 4G tab (không qua modal)
+    if (!isMua3G4G && !isVerified) {
+      console.log("ERROR: eKYC not verified (Data 4G tab)");
       toast.error(
         "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
       );
       return;
     }
 
-    // Set selected pack and show payment modal
-    setSelectedPack(pack);
-    setShowPaymentModal(true);
-    await loadAccounts();
+    console.log("=== All validations passed, navigating to PIN screen ===");
+    // Navigate to PIN screen with payment request
+    navigate("/utilities/pin", {
+      state: {
+        pendingRequest: {
+          type: "DATA_PACK",
+          amount: pack.price,
+          accountId: account.accountNumber,
+          details: {
+            phoneNumber: phoneToUse,
+            telco: detectTelcoByPhone(phoneToUse),
+            packId: pack.id,
+            packName: pack.name,
+            formData: {
+              dataPhone: phoneToUse,
+              dataTelco: detectTelcoByPhone(phoneToUse),
+              dataPack: pack.id,
+            },
+            source: "home",
+          },
+        },
+        returnPath: "/utilities/data",
+      },
+    });
+    console.log("=== Navigate called ===");
   };
 
-  // Handle phone topup payment (for Data 4G phone tab)
+  // Handle phone topup payment (for Data 4G phone tab) - Navigate to PIN screen
   const handlePhoneTopupPayment = async (amount: number) => {
     // Validate phone number
     if (!validatePhoneNumber(formData.phoneNumber)) {
@@ -543,6 +633,12 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
       return;
     }
 
+    // Validate account
+    if (!account || !account.accountNumber) {
+      toast.error("Không tìm thấy tài khoản thanh toán");
+      return;
+    }
+
     // ✅ Kiểm tra eKYC trước khi mở modal thanh toán
     if (!isVerified) {
       toast.error(
@@ -551,123 +647,27 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
       return;
     }
 
-    // Set selected pack (using amount as pack) and show payment modal
-    setSelectedPack({
-      id: `topup-${amount}`,
-      name: `Nạp ${amount.toLocaleString("vi-VN")} đ`,
-      price: amount,
+    // Navigate to PIN screen with payment request
+    navigate("/utilities/pin", {
+      state: {
+        pendingRequest: {
+          type: "PHONE_TOPUP",
+          amount: amount,
+          accountId: account.accountNumber,
+          details: {
+            phoneNumber: formData.phoneNumber,
+            telco: detectTelcoByPhone(formData.phoneNumber),
+            formData: {
+              phoneNumber: formData.phoneNumber,
+              telco: detectTelcoByPhone(formData.phoneNumber),
+              topupAmount: String(amount),
+            },
+            source: "home",
+          },
+        },
+        returnPath: "/utilities/data",
+      },
     });
-    setShowPaymentModal(true);
-    await loadAccounts();
-  };
-
-  // Execute payment
-  const handlePaymentConfirm = async () => {
-    if (!selectedAccountId) {
-      toast.error("Vui lòng chọn tài khoản thanh toán");
-      return;
-    }
-
-    if (!selectedPack) {
-      toast.error("Thông tin thanh toán không đầy đủ");
-      return;
-    }
-
-    setProcessingPayment(true);
-    try {
-      // Determine if this is data pack or phone topup
-      const isPhoneTopup = selectedPack.id.startsWith("topup-");
-
-      if (isPhoneTopup) {
-        // Phone topup payment
-        const result = await payPhoneTopup({
-          phoneNumber: formData.phoneNumber,
-          telco: detectTelcoByPhone(formData.phoneNumber),
-          topupAmount: selectedPack.price,
-          accountId: selectedAccountId,
-        });
-
-        toast.success("Nạp tiền thành công!");
-
-        navigate("/utilities/result", {
-          state: {
-            result: {
-              flow: "phone",
-              amount: String(selectedPack.price),
-              title: "Nạp tiền điện thoại",
-              time: new Date().toLocaleString("vi-VN"),
-              fee: "0",
-              transactionId: result.transactionId,
-              details: [
-                { label: "Số điện thoại", value: formData.phoneNumber },
-                {
-                  label: "Nhà mạng",
-                  value: getTelcoLabel(
-                    detectTelcoByPhone(formData.phoneNumber)
-                  ),
-                },
-                {
-                  label: "Mệnh giá",
-                  value: `${selectedPack.price.toLocaleString("vi-VN")} đ`,
-                },
-                { label: "Mã giao dịch", value: result.transactionId },
-              ],
-            },
-            source: "home",
-          },
-        });
-      } else {
-        // Data pack payment
-        const phoneToUse = isMua3G4G ? formData.dataPhone : formData.dataPhone;
-        const telcoToUse = detectTelcoByPhone(phoneToUse);
-
-        const result = await payDataPack({
-          phoneNumber: phoneToUse,
-          telco: telcoToUse,
-          packId: selectedPack.id,
-          packName: selectedPack.name,
-          packPrice: selectedPack.price,
-          accountId: selectedAccountId,
-        });
-
-        toast.success("Mua gói data thành công!");
-
-        navigate("/utilities/result", {
-          state: {
-            result: {
-              flow: "data",
-              amount: String(selectedPack.price),
-              title: "Mua gói data",
-              time: new Date().toLocaleString("vi-VN"),
-              fee: "0",
-              transactionId: result.transactionId,
-              details: [
-                { label: "Số điện thoại", value: phoneToUse },
-                { label: "Nhà mạng", value: getTelcoLabel(telcoToUse) },
-                { label: "Gói data", value: selectedPack.name },
-                {
-                  label: "Giá",
-                  value: `${selectedPack.price.toLocaleString("vi-VN")} đ`,
-                },
-                { label: "Mã giao dịch", value: result.transactionId },
-              ],
-            },
-            source: "home",
-          },
-        });
-      }
-    } catch (error) {
-      console.error("Payment error:", error);
-      if (error instanceof Error) {
-        toast.error(error.message);
-      } else {
-        toast.error("Thanh toán thất bại");
-      }
-    } finally {
-      setProcessingPayment(false);
-      setShowPaymentModal(false);
-      setSelectedPack(null);
-    }
   };
 
   return (
@@ -920,131 +920,6 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
           </Card>
         </button>
       </div>
-
-      {/* Payment Modal */}
-      {showPaymentModal && selectedPack && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40">
-          <div className="bg-background w-full rounded-t-2xl p-6 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Xác nhận thanh toán</h2>
-              <button
-                type="button"
-                className="text-sm text-muted-foreground"
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setSelectedPack(null);
-                }}
-              >
-                Đóng
-              </button>
-            </div>
-
-            {/* Payment Info Summary */}
-            <div className="space-y-2 rounded-xl border p-3 text-sm mb-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">
-                  {selectedPack.id.startsWith("topup-")
-                    ? "Số điện thoại"
-                    : "Số điện thoại"}
-                </span>
-                <span className="font-semibold">
-                  {selectedPack.id.startsWith("topup-")
-                    ? formData.phoneNumber
-                    : formData.dataPhone}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">
-                  {selectedPack.id.startsWith("topup-")
-                    ? "Loại dịch vụ"
-                    : "Gói data"}
-                </span>
-                <span className="font-semibold">{selectedPack.name}</span>
-              </div>
-              <div className="border-t pt-2 flex items-center justify-between text-base font-bold text-primary">
-                <span>Tổng thanh toán</span>
-                <span>{selectedPack.price.toLocaleString("vi-VN")} ₫</span>
-              </div>
-            </div>
-
-            {/* Account Selection */}
-            <div className="space-y-2 flex-1 overflow-y-auto">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Tài khoản nguồn
-              </p>
-              {loadingAccounts && (
-                <div className="space-y-2">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="h-16 bg-gray-200 rounded"></div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {!loadingAccounts && accounts.length > 0 && (
-                <div className="space-y-2">
-                  {accounts.map((acc) => (
-                    <button
-                      key={acc.id}
-                      type="button"
-                      className={`w-full rounded-xl border p-3 text-left transition ${
-                        selectedAccountId === acc.id
-                          ? "border-primary bg-primary/5"
-                          : "border-muted hover:border-primary/50"
-                      }`}
-                      onClick={() => setSelectedAccountId(acc.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-mono font-semibold">
-                            {acc.accountNumber}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {acc.accountType}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-semibold text-primary">
-                            {acc.balance.toLocaleString("vi-VN")} ₫
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {!loadingAccounts && accounts.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Chưa có tài khoản thanh toán
-                </p>
-              )}
-            </div>
-
-            {/* Payment Button */}
-            <div className="flex gap-3 mt-4 pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setSelectedPack(null);
-                }}
-                className="flex-1"
-              >
-                Hủy
-              </Button>
-              <Button
-                onClick={handlePaymentConfirm}
-                disabled={!selectedAccountId || processingPayment}
-                className="flex-1"
-              >
-                {processingPayment ? "Đang xử lý..." : "Thanh toán"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -6,9 +6,11 @@ import {
   push,
   runTransaction,
   serverTimestamp as rtdbServerTimestamp,
+  update,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
 import { requireBiometricForHighValueVnd } from "./biometricService";
+import { sendOtpEmail } from "./otpService";
 
 import type {
   FlightOption,
@@ -18,6 +20,13 @@ import type {
 // ✅ [PATCH - NEW]
 // Dùng chung type với UI để đảm bảo shape dữ liệu location
 import type { LocationOption } from "@/pages/utilities/utilityTypes";
+
+export type InitiateFlightPaymentResult = {
+  transactionId: string;
+  maskedEmail: string;
+  expireAt: number;
+  devOtpCode?: string;
+};
 
 /**
  * ✅ [PATCH - NEW]
@@ -506,4 +515,417 @@ export async function createFlightOrder(params: {
     bookingId,
     transactionId,
   };
+}
+
+/* ================== NEW: INITIATE + CONFIRM FLOW ================== */
+
+/**
+ * Step 1: Initiate flight payment (create pending transaction + send OTP)
+ */
+export async function initiateFlightPayment(params: {
+  selectedFlight: FlightOption;
+  formData: UtilityFormData;
+  accountId: string;
+}): Promise<InitiateFlightPaymentResult> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  const { selectedFlight, formData, accountId } = params;
+
+  // Validate flight selection
+  if (!selectedFlight) {
+    throw new Error("Vui lòng chọn chuyến bay");
+  }
+
+  // Validate account selection
+  if (!accountId) {
+    throw new Error("Vui lòng chọn tài khoản thanh toán");
+  }
+
+  // Validate passengers
+  const paxAdults = parseInt((formData as any).flightAdult || "0", 10) || 0;
+  const paxChildren = parseInt((formData as any).flightChild || "0", 10) || 0;
+  const paxInfants = parseInt((formData as any).flightInfant || "0", 10) || 0;
+  const paxTotal = paxAdults + paxChildren + paxInfants;
+
+  if (paxTotal < 1) {
+    throw new Error("Vui lòng chọn ít nhất một hành khách");
+  }
+
+  // Get user profile
+  const profile = await getCurrentUserProfile();
+  if (!profile) {
+    throw new Error(
+      "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại."
+    );
+  }
+
+  // Check account status
+  if (profile.status === "LOCKED") {
+    throw new Error("Tài khoản đăng nhập đang bị khóa, không thể giao dịch");
+  }
+
+  // Check eKYC status
+  if (profile.ekycStatus !== "VERIFIED") {
+    throw new Error(
+      "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+    );
+  }
+
+  // Check transaction permission
+  if (!profile.canTransact) {
+    throw new Error(
+      "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+    );
+  }
+
+  // Calculate total amount
+  const totalAmount = (selectedFlight.price ?? 0) * Math.max(paxTotal, 1);
+
+  // Check if account exists and has sufficient balance
+  if (accountId && accountId !== "DEMO") {
+    const accountRef = ref(firebaseRtdb, `accounts/${accountId}`);
+    const accountSnap = await get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("Không tìm thấy tài khoản thanh toán");
+    }
+
+    const accountData = accountSnap.val() as Record<string, unknown>;
+    if (accountData.uid !== user.uid) {
+      throw new Error("Bạn không có quyền sử dụng tài khoản này");
+    }
+
+    const balance =
+      typeof accountData.balance === "number"
+        ? accountData.balance
+        : Number((accountData.balance as string) || 0);
+    if (balance < totalAmount) {
+      throw new Error(
+        `Số dư không đủ. Cần ${totalAmount.toLocaleString(
+          "vi-VN"
+        )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+      );
+    }
+  }
+
+  // Create pending transaction
+  const txnRef = push(ref(firebaseRtdb, `flightTransactions`));
+  const transactionId = txnRef.key!;
+
+  await set(txnRef, {
+    transactionId,
+    userId: user.uid,
+    accountId: accountId,
+    type: "FLIGHT_BOOKING",
+    amount: totalAmount,
+    description: `Đặt vé máy bay: ${selectedFlight.airline} ${selectedFlight.code}`,
+    status: "PENDING",
+    airline: selectedFlight.airline,
+    flightCode: selectedFlight.code,
+    route: `${selectedFlight.fromCode} → ${selectedFlight.toCode}`,
+    departDate: formData.flightDate,
+    departTime: selectedFlight.departTime,
+    arriveTime: selectedFlight.arriveTime,
+    passengers: {
+      adults: paxAdults,
+      children: paxChildren,
+      infants: paxInfants,
+    },
+    cabin: selectedFlight.cabin,
+    // Store full flight and form data for later confirmation
+    selectedFlight,
+    formData,
+    createdAt: Date.now(),
+    createdAtServer: rtdbServerTimestamp(),
+  });
+
+  // Send OTP email
+  const otpResult = await sendOtpEmail(user.uid, transactionId, "FLIGHT");
+
+  return {
+    transactionId,
+    maskedEmail: otpResult.maskedEmail,
+    expireAt: otpResult.expireAt,
+    devOtpCode: otpResult.devOtpCode,
+  };
+}
+
+/**
+ * Step 2: Confirm flight payment with OTP
+ */
+export async function confirmFlightPaymentWithOtp(
+  transactionId: string,
+  otpCode: string
+): Promise<{
+  uid: string;
+  orderId: string;
+  orderNo: number;
+  createdAtIso: string;
+  bookingId: string;
+  transactionId: string;
+}> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Get transaction
+    const txnRef = ref(firebaseRtdb, `flightTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+
+    // Verify ownership
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền xác nhận giao dịch này");
+    }
+
+    // Check status
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Verify OTP
+    const otpRef = ref(firebaseRtdb, `otps/${transactionId}`);
+    const otpSnap = await get(otpRef);
+    if (!otpSnap.exists()) {
+      throw new Error("Mã OTP không tồn tại hoặc đã hết hạn");
+    }
+
+    const otpData = otpSnap.val() as Record<string, unknown>;
+
+    // Check expiration
+    const expireAt =
+      typeof otpData.expireAt === "number" ? otpData.expireAt : 0;
+    if (Date.now() > expireAt) {
+      throw new Error("Mã OTP đã hết hạn. Vui lòng gửi lại OTP mới.");
+    }
+
+    // Verify OTP code
+    if (otpData.code !== otpCode) {
+      throw new Error("Mã OTP không đúng. Vui lòng kiểm tra lại.");
+    }
+
+    // Get stored data
+    const selectedFlight = txnData.selectedFlight as FlightOption;
+    const formData = txnData.formData as UtilityFormData;
+    const accountId = txnData.accountId as string;
+    const totalAmount = txnData.amount as number;
+
+    const paxAdults = parseInt((formData as any).flightAdult || "0", 10) || 0;
+    const paxChildren = parseInt((formData as any).flightChild || "0", 10) || 0;
+    const paxInfants = parseInt((formData as any).flightInfant || "0", 10) || 0;
+
+    // Process payment: deduct balance
+    let balanceAfter = 0;
+    if (accountId && accountId !== "DEMO") {
+      const accountRef = ref(firebaseRtdb, `accounts/${accountId}`);
+      balanceAfter = await runTransaction(accountRef, (current) => {
+        const acc = current as Record<string, unknown> | null;
+        if (!acc) {
+          return current;
+        }
+        if (acc.status === "LOCKED") {
+          throw new Error(
+            "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+          );
+        }
+        const balance =
+          typeof acc.balance === "number"
+            ? acc.balance
+            : Number((acc.balance as string) || 0);
+        if (balance < totalAmount) {
+          throw new Error(
+            `Số dư không đủ. Cần ${totalAmount.toLocaleString(
+              "vi-VN"
+            )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+          );
+        }
+        return { ...acc, balance: balance - totalAmount };
+      }).then((res) => {
+        if (!res.committed) throw new Error("Giao dịch thất bại");
+        const acc = res.snapshot.val() as Record<string, unknown>;
+        return typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
+      });
+    }
+
+    const createdAtIso = new Date().toISOString();
+    const createdAtTimestamp = Date.now();
+
+    // Generate order number
+    const counterRef = ref(firebaseRtdb, "counters/flightOrder");
+    const tx = await runTransaction(counterRef, (current) => {
+      const cur = typeof current === "number" ? current : 0;
+      return cur + 1;
+    });
+
+    const orderNo = (tx.snapshot.val() as number) ?? 1;
+    const orderId = `FO${String(orderNo).padStart(6, "0")}`;
+
+    // Update transaction status
+    await update(txnRef, {
+      status: "SUCCESS",
+      orderId,
+      confirmedAt: createdAtTimestamp,
+      confirmedAtServer: rtdbServerTimestamp(),
+    });
+
+    // Delete OTP
+    await set(otpRef, null);
+
+    // Create booking record
+    const bookingRef = push(ref(firebaseRtdb, `flightBookings`));
+    const bookingId = bookingRef.key!;
+
+    await set(bookingRef, {
+      bookingId,
+      userId: user.uid,
+      flightId: selectedFlight.id,
+      airline: selectedFlight.airline,
+      flightCode: selectedFlight.code,
+      fromCode: selectedFlight.fromCode,
+      fromName: selectedFlight.fromName,
+      toCode: selectedFlight.toCode,
+      toName: selectedFlight.toName,
+      departTime: selectedFlight.departTime,
+      arriveTime: selectedFlight.arriveTime,
+      duration: selectedFlight.duration,
+      cabin: selectedFlight.cabin,
+      departDate: formData.flightDate,
+      adults: paxAdults,
+      children: paxChildren,
+      infants: paxInfants,
+      totalAmount: totalAmount,
+      accountId: accountId,
+      status: "CONFIRMED",
+      transactionId,
+      orderId,
+      createdAt: createdAtTimestamp,
+      createdAtServer: rtdbServerTimestamp(),
+    });
+
+    // Create order record
+    const orderPath = `flightOrdersByUser/${user.uid}/${orderId}`;
+    await set(ref(firebaseRtdb, orderPath), {
+      orderId,
+      orderNo,
+      uid: user.uid,
+      from: formData.flightFrom ?? null,
+      to: formData.flightTo ?? null,
+      departDate: formData.flightDate ?? null,
+      isRoundTrip: !!(
+        formData.flightReturnDate && String(formData.flightReturnDate).trim()
+      ),
+      returnDate: formData.flightReturnDate ?? null,
+      seatClass: formData.flightSeatClass ?? null,
+      adults: paxAdults,
+      children: paxChildren,
+      infants: paxInfants,
+      flight: selectedFlight,
+      amount: totalAmount,
+      currency: "VND",
+      status: "PAID",
+      transactionId,
+      bookingId,
+      createdAt: createdAtIso,
+      createdAtServer: rtdbServerTimestamp(),
+    });
+
+    // Save recent search
+    const recentRef = push(ref(firebaseRtdb, `flightRecent/${user.uid}`));
+    await set(recentRef, {
+      from: formData.flightFrom ?? null,
+      to: formData.flightTo ?? null,
+      departDate: formData.flightDate ?? null,
+      isRoundTrip: !!(
+        formData.flightReturnDate && String(formData.flightReturnDate).trim()
+      ),
+      returnDate: formData.flightReturnDate ?? null,
+      seatClass: formData.flightSeatClass ?? null,
+      adults: paxAdults,
+      children: paxChildren,
+      infants: paxInfants,
+      createdAt: createdAtIso,
+      createdAtServer: rtdbServerTimestamp(),
+    });
+
+    // Send notification
+    try {
+      const notiRef = push(ref(firebaseRtdb, `notifications/${user.uid}`));
+      await set(notiRef, {
+        type: "BALANCE_CHANGE",
+        direction: "OUT",
+        title: "Đặt vé máy bay",
+        message: `${selectedFlight.airline} • ${selectedFlight.fromCode} → ${selectedFlight.toCode}`,
+        amount: totalAmount,
+        accountNumber: accountId,
+        balanceAfter,
+        transactionId,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Notification failed (ignored):", err);
+    }
+
+    return {
+      uid: user.uid,
+      orderId,
+      orderNo,
+      createdAtIso,
+      bookingId,
+      transactionId,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Resend OTP for flight payment
+ */
+export async function resendFlightPaymentOtp(
+  transactionId: string
+): Promise<{ maskedEmail: string; expireAt: number }> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Verify transaction exists and belongs to user
+    const txnRef = ref(firebaseRtdb, `flightTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền gửi lại OTP cho giao dịch này");
+    }
+
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Resend OTP
+    const otpResult = await sendOtpEmail(user.uid, transactionId, "FLIGHT");
+
+    return {
+      maskedEmail: otpResult.maskedEmail,
+      expireAt: otpResult.expireAt,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
 }

@@ -6,9 +6,11 @@ import {
   push,
   set,
   serverTimestamp,
+  update,
 } from "firebase/database";
 import { getCurrentUserProfile } from "./userService";
 import { requireBiometricForHighValueVnd } from "./biometricService";
+import { sendOtpEmail } from "./otpService";
 
 /* ================== TYPES ================== */
 
@@ -31,6 +33,13 @@ export type PayDataPackParams = {
 export type PaymentResult = {
   transactionId: string;
   amount: number;
+};
+
+export type InitiatePaymentResult = {
+  transactionId: string;
+  maskedEmail: string;
+  expireAt: number;
+  devOtpCode?: string;
 };
 
 /* ================== HELPER FUNCTIONS ================== */
@@ -397,6 +406,582 @@ export async function payDataPack(
     return {
       transactionId,
       amount: params.packPrice,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/* ================== NEW: INITIATE + CONFIRM FLOW ================== */
+
+/**
+ * Step 1: Initiate phone topup payment (create pending transaction + send OTP)
+ */
+export async function initiatePhoneTopupPayment(
+  params: PayPhoneTopupParams
+): Promise<InitiatePaymentResult> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Get user profile and validate permissions
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      throw new Error(
+        "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại."
+      );
+    }
+
+    // Check account status
+    if (profile.status === "LOCKED") {
+      throw new Error("Tài khoản đăng nhập đang bị khóa, không thể giao dịch");
+    }
+
+    // Check eKYC status
+    if (profile.ekycStatus !== "VERIFIED") {
+      throw new Error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
+    }
+
+    // Check transaction permission
+    if (!profile.canTransact) {
+      throw new Error(
+        "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+      );
+    }
+
+    // Validate phone number
+    if (!validatePhoneNumber(params.phoneNumber)) {
+      throw new Error("Vui lòng nhập số điện thoại hợp lệ");
+    }
+
+    // Validate amount
+    validateAmount(params.topupAmount);
+
+    // Validate account selection
+    if (!params.accountId) {
+      throw new Error("Vui lòng chọn tài khoản thanh toán");
+    }
+
+    // Check if account exists and belongs to user
+    const accountRef = ref(firebaseRtdb, `accounts/${params.accountId}`);
+    const accountSnap = await get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("Không tìm thấy tài khoản thanh toán");
+    }
+
+    const accountData = accountSnap.val() as Record<string, unknown>;
+    if (accountData.uid !== user.uid) {
+      throw new Error("Bạn không có quyền sử dụng tài khoản này");
+    }
+
+    // Check balance
+    const balance =
+      typeof accountData.balance === "number"
+        ? accountData.balance
+        : Number((accountData.balance as string) || 0);
+    if (balance < params.topupAmount) {
+      throw new Error(
+        `Số dư không đủ. Cần ${params.topupAmount.toLocaleString(
+          "vi-VN"
+        )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+      );
+    }
+
+    // Create pending transaction
+    const txnRef = push(ref(firebaseRtdb, `utilityTransactions`));
+    const transactionId = txnRef.key!;
+
+    const telcoLabel = getTelcoLabel(params.telco);
+
+    await set(txnRef, {
+      transactionId,
+      userId: user.uid,
+      accountId: params.accountId,
+      type: "PHONE_TOPUP",
+      amount: params.topupAmount,
+      description: `Nạp tiền điện thoại ${telcoLabel}: ${params.phoneNumber}`,
+      status: "PENDING",
+      phoneNumber: params.phoneNumber,
+      telco: params.telco,
+      topupAmount: params.topupAmount,
+      createdAt: Date.now(),
+      createdAtServer: serverTimestamp(),
+    });
+
+    // Send OTP email
+    const otpResult = await sendOtpEmail(
+      user.uid,
+      transactionId,
+      "PHONE_TOPUP"
+    );
+
+    return {
+      transactionId,
+      maskedEmail: otpResult.maskedEmail,
+      expireAt: otpResult.expireAt,
+      devOtpCode: otpResult.devOtpCode,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Step 2: Confirm phone topup payment with OTP
+ */
+export async function confirmPhoneTopupPaymentWithOtp(
+  transactionId: string,
+  otpCode: string
+): Promise<PaymentResult> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Get transaction
+    const txnRef = ref(firebaseRtdb, `utilityTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+
+    // Verify ownership
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền xác nhận giao dịch này");
+    }
+
+    // Check status
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Verify OTP
+    const otpRef = ref(firebaseRtdb, `otps/${transactionId}`);
+    const otpSnap = await get(otpRef);
+    if (!otpSnap.exists()) {
+      throw new Error("Mã OTP không tồn tại hoặc đã hết hạn");
+    }
+
+    const otpData = otpSnap.val() as Record<string, unknown>;
+
+    // Check expiration
+    const expireAt =
+      typeof otpData.expireAt === "number" ? otpData.expireAt : 0;
+    if (Date.now() > expireAt) {
+      throw new Error("Mã OTP đã hết hạn. Vui lòng gửi lại OTP mới.");
+    }
+
+    // Verify OTP code
+    if (otpData.code !== otpCode) {
+      throw new Error("Mã OTP không đúng. Vui lòng kiểm tra lại.");
+    }
+
+    // Process payment: deduct balance
+    const accountId = txnData.accountId as string;
+    const amount = txnData.amount as number;
+
+    const accountRef = ref(firebaseRtdb, `accounts/${accountId}`);
+    const balanceAfter = await runTransaction(accountRef, (current) => {
+      const acc = current as Record<string, unknown> | null;
+      if (!acc) {
+        return current;
+      }
+      if (acc.status === "LOCKED") {
+        throw new Error(
+          "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+        );
+      }
+      const balance =
+        typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
+      if (balance < amount) {
+        throw new Error(
+          `Số dư không đủ. Cần ${amount.toLocaleString(
+            "vi-VN"
+          )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+        );
+      }
+      return { ...acc, balance: balance - amount };
+    }).then((res) => {
+      if (!res.committed) throw new Error("Giao dịch thất bại");
+      const acc = res.snapshot.val() as Record<string, unknown>;
+      return typeof acc.balance === "number"
+        ? acc.balance
+        : Number((acc.balance as string) || 0);
+    });
+
+    // Update transaction status
+    await update(txnRef, {
+      status: "SUCCESS",
+      confirmedAt: Date.now(),
+      confirmedAtServer: serverTimestamp(),
+    });
+
+    // Delete OTP
+    await set(otpRef, null);
+
+    // Send notification
+    try {
+      const notiRef = push(ref(firebaseRtdb, `notifications/${user.uid}`));
+      const telcoLabel = getTelcoLabel(txnData.telco as string);
+
+      await set(notiRef, {
+        type: "BALANCE_CHANGE",
+        direction: "OUT",
+        title: "Nạp tiền điện thoại",
+        message: `${telcoLabel} - ${txnData.phoneNumber}`,
+        amount,
+        accountNumber: accountId,
+        balanceAfter,
+        transactionId,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Notification failed (ignored):", err);
+    }
+
+    return {
+      transactionId,
+      amount,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Resend OTP for phone topup payment
+ */
+export async function resendPhoneTopupPaymentOtp(
+  transactionId: string
+): Promise<{ maskedEmail: string; expireAt: number }> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Verify transaction exists and belongs to user
+    const txnRef = ref(firebaseRtdb, `utilityTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền gửi lại OTP cho giao dịch này");
+    }
+
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Resend OTP
+    const otpResult = await sendOtpEmail(
+      user.uid,
+      transactionId,
+      "PHONE_TOPUP"
+    );
+
+    return {
+      maskedEmail: otpResult.maskedEmail,
+      expireAt: otpResult.expireAt,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Step 1: Initiate data pack payment (create pending transaction + send OTP)
+ */
+export async function initiateDataPackPayment(
+  params: PayDataPackParams
+): Promise<InitiatePaymentResult> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Get user profile and validate permissions
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      throw new Error(
+        "Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại."
+      );
+    }
+
+    // Check account status
+    if (profile.status === "LOCKED") {
+      throw new Error("Tài khoản đăng nhập đang bị khóa, không thể giao dịch");
+    }
+
+    // Check eKYC status
+    if (profile.ekycStatus !== "VERIFIED") {
+      throw new Error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
+    }
+
+    // Check transaction permission
+    if (!profile.canTransact) {
+      throw new Error(
+        "Tài khoản chưa được bật quyền giao dịch. Vui lòng liên hệ ngân hàng."
+      );
+    }
+
+    // Validate phone number
+    if (!validatePhoneNumber(params.phoneNumber)) {
+      throw new Error("Vui lòng nhập số điện thoại hợp lệ");
+    }
+
+    // Validate amount
+    validateAmount(params.packPrice);
+
+    // Validate account selection
+    if (!params.accountId) {
+      throw new Error("Vui lòng chọn tài khoản thanh toán");
+    }
+
+    // Check if account exists and belongs to user
+    const accountRef = ref(firebaseRtdb, `accounts/${params.accountId}`);
+    const accountSnap = await get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("Không tìm thấy tài khoản thanh toán");
+    }
+
+    const accountData = accountSnap.val() as Record<string, unknown>;
+    if (accountData.uid !== user.uid) {
+      throw new Error("Bạn không có quyền sử dụng tài khoản này");
+    }
+
+    // Check balance
+    const balance =
+      typeof accountData.balance === "number"
+        ? accountData.balance
+        : Number((accountData.balance as string) || 0);
+    if (balance < params.packPrice) {
+      throw new Error(
+        `Số dư không đủ. Cần ${params.packPrice.toLocaleString(
+          "vi-VN"
+        )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+      );
+    }
+
+    // Create pending transaction
+    const txnRef = push(ref(firebaseRtdb, `utilityTransactions`));
+    const transactionId = txnRef.key!;
+
+    const telcoLabel = getTelcoLabel(params.telco);
+
+    await set(txnRef, {
+      transactionId,
+      userId: user.uid,
+      accountId: params.accountId,
+      type: "DATA_PACK_PURCHASE",
+      amount: params.packPrice,
+      description: `Mua gói data ${telcoLabel}: ${params.packName} - ${params.phoneNumber}`,
+      status: "PENDING",
+      phoneNumber: params.phoneNumber,
+      telco: params.telco,
+      packId: params.packId,
+      packName: params.packName,
+      packPrice: params.packPrice,
+      createdAt: Date.now(),
+      createdAtServer: serverTimestamp(),
+    });
+
+    // Send OTP email
+    const otpResult = await sendOtpEmail(user.uid, transactionId, "DATA_PACK");
+
+    return {
+      transactionId,
+      maskedEmail: otpResult.maskedEmail,
+      expireAt: otpResult.expireAt,
+      devOtpCode: otpResult.devOtpCode,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Step 2: Confirm data pack payment with OTP
+ */
+export async function confirmDataPackPaymentWithOtp(
+  transactionId: string,
+  otpCode: string
+): Promise<PaymentResult> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Get transaction
+    const txnRef = ref(firebaseRtdb, `utilityTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+
+    // Verify ownership
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền xác nhận giao dịch này");
+    }
+
+    // Check status
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Verify OTP
+    const otpRef = ref(firebaseRtdb, `otps/${transactionId}`);
+    const otpSnap = await get(otpRef);
+    if (!otpSnap.exists()) {
+      throw new Error("Mã OTP không tồn tại hoặc đã hết hạn");
+    }
+
+    const otpData = otpSnap.val() as Record<string, unknown>;
+
+    // Check expiration
+    const expireAt =
+      typeof otpData.expireAt === "number" ? otpData.expireAt : 0;
+    if (Date.now() > expireAt) {
+      throw new Error("Mã OTP đã hết hạn. Vui lòng gửi lại OTP mới.");
+    }
+
+    // Verify OTP code
+    if (otpData.code !== otpCode) {
+      throw new Error("Mã OTP không đúng. Vui lòng kiểm tra lại.");
+    }
+
+    // Process payment: deduct balance
+    const accountId = txnData.accountId as string;
+    const amount = txnData.amount as number;
+
+    const accountRef = ref(firebaseRtdb, `accounts/${accountId}`);
+    const balanceAfter = await runTransaction(accountRef, (current) => {
+      const acc = current as Record<string, unknown> | null;
+      if (!acc) {
+        return current;
+      }
+      if (acc.status === "LOCKED") {
+        throw new Error(
+          "Tài khoản nguồn đang bị khóa. Vui lòng liên hệ ngân hàng."
+        );
+      }
+      const balance =
+        typeof acc.balance === "number"
+          ? acc.balance
+          : Number((acc.balance as string) || 0);
+      if (balance < amount) {
+        throw new Error(
+          `Số dư không đủ. Cần ${amount.toLocaleString(
+            "vi-VN"
+          )} ₫, hiện có ${balance.toLocaleString("vi-VN")} ₫`
+        );
+      }
+      return { ...acc, balance: balance - amount };
+    }).then((res) => {
+      if (!res.committed) throw new Error("Giao dịch thất bại");
+      const acc = res.snapshot.val() as Record<string, unknown>;
+      return typeof acc.balance === "number"
+        ? acc.balance
+        : Number((acc.balance as string) || 0);
+    });
+
+    // Update transaction status
+    await update(txnRef, {
+      status: "SUCCESS",
+      confirmedAt: Date.now(),
+      confirmedAtServer: serverTimestamp(),
+    });
+
+    // Delete OTP
+    await set(otpRef, null);
+
+    // Send notification
+    try {
+      const notiRef = push(ref(firebaseRtdb, `notifications/${user.uid}`));
+      const telcoLabel = getTelcoLabel(txnData.telco as string);
+
+      await set(notiRef, {
+        type: "BALANCE_CHANGE",
+        direction: "OUT",
+        title: "Mua gói data",
+        message: `${telcoLabel} - ${txnData.packName} - ${txnData.phoneNumber}`,
+        amount,
+        accountNumber: accountId,
+        balanceAfter,
+        transactionId,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Notification failed (ignored):", err);
+    }
+
+    return {
+      transactionId,
+      amount,
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Resend OTP for data pack payment
+ */
+export async function resendDataPackPaymentOtp(
+  transactionId: string
+): Promise<{ maskedEmail: string; expireAt: number }> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    throw new Error("Vui lòng đăng nhập để tiếp tục");
+  }
+
+  try {
+    // Verify transaction exists and belongs to user
+    const txnRef = ref(firebaseRtdb, `utilityTransactions/${transactionId}`);
+    const txnSnap = await get(txnRef);
+    if (!txnSnap.exists()) {
+      throw new Error("Không tìm thấy giao dịch");
+    }
+
+    const txnData = txnSnap.val() as Record<string, unknown>;
+    if (txnData.userId !== user.uid) {
+      throw new Error("Bạn không có quyền gửi lại OTP cho giao dịch này");
+    }
+
+    if (txnData.status !== "PENDING") {
+      throw new Error("Giao dịch đã được xử lý hoặc đã hủy");
+    }
+
+    // Resend OTP
+    const otpResult = await sendOtpEmail(user.uid, transactionId, "DATA_PACK");
+
+    return {
+      maskedEmail: otpResult.maskedEmail,
+      expireAt: otpResult.expireAt,
     };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Có lỗi xảy ra";

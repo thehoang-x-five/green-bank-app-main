@@ -54,6 +54,8 @@ import HotelBooking from "@/pages/HotelBooking";
 import MovieBooking from "@/pages/MovieBooking";
 import UtilityMobileHistory from "@/pages/UtilityMobileHistory";
 import UtilityConfirmPayment from "@/pages/utilities/UtilityConfirmPayment";
+import UtilityPinConfirm from "@/pages/utilities/UtilityPinConfirm";
+import UtilityOtpConfirm from "@/pages/utilities/UtilityOtpConfirm";
 
 import BottomNav from "@/components/BottomNav";
 
@@ -374,6 +376,8 @@ const App = () => (
           />
           <Route path="/utilities/:type" element={<UtilitiesShell />} />
 
+          <Route path="/utilities/pin" element={<UtilityPinConfirm />} />
+          <Route path="/utilities/otp" element={<UtilityOtpConfirm />} />
           <Route
             path="/utilities/result"
             element={
@@ -416,10 +420,7 @@ const App = () => (
             element={<OfficerTransactionsPage />}
           />
           <Route path="/officer/ekyc" element={<OfficerEKYCPage />} />
-          <Route
-            path="/officer/ekyc/:id"
-            element={<OfficerEKYCDetailPage />}
-          />
+          <Route path="/officer/ekyc/:id" element={<OfficerEKYCDetailPage />} />
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />

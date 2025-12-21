@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useUserAccount } from "@/hooks/useUserAccount";
 import { useEkycCheck } from "@/hooks/useEkycCheck";
 import { toast } from "sonner";
@@ -11,7 +12,6 @@ import type { BillService, UtilityFormData } from "./utilityTypes";
 import {
   fetchBillProviders,
   fetchUserUtilityBill,
-  payUserUtilityBill,
   type BillProvider,
   type UserUtilityBill,
   type UtilityBillServiceType,
@@ -60,6 +60,7 @@ export default function UtilityBill({
   onGoMobilePhone,
   onPaymentSuccess,
 }: Props) {
+  const navigate = useNavigate();
   const [showBillProviderSheet, setShowBillProviderSheet] = useState(false);
   const [billProviderSearch, setBillProviderSearch] = useState("");
   const [showProviderError, setShowProviderError] = useState(false);
@@ -69,7 +70,6 @@ export default function UtilityBill({
   const [providersFromDb, setProvidersFromDb] = useState<BillProvider[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
   const [activeBill, setActiveBill] = useState<UserUtilityBill | null>(null);
-  const [isPaying, setIsPaying] = useState(false);
 
   const billServiceForDb = useMemo(() => {
     if (billService === "electric") return "electric";
@@ -372,9 +372,8 @@ export default function UtilityBill({
 
         <Button
           type="button"
-          disabled={isPaying}
           className="w-full mt-4"
-          onClick={async (e) => {
+          onClick={(e) => {
             if (!formData.billProvider) {
               e.preventDefault();
               setShowProviderError(true);
@@ -396,29 +395,27 @@ export default function UtilityBill({
             }
 
             e.preventDefault();
-            setIsPaying(true);
 
-            try {
-              await payUserUtilityBill({
-                service: billServiceForDb as UtilityBillServiceType,
-                providerId: selectedProviderId,
-                accountId: account?.accountNumber || "DEMO",
-              });
-
-              setIsPaying(false);
-
-              // Call parent callback to navigate to result page
-              if (onPaymentSuccess) {
-                onPaymentSuccess();
-              }
-            } catch (error) {
-              setIsPaying(false);
-              // Error will be shown by the service
-              console.error("Payment failed:", error);
-            }
+            // Navigate to PIN screen with payment request
+            navigate("/utilities/pin", {
+              state: {
+                pendingRequest: {
+                  type: "UTILITY_BILL",
+                  amount: Number(formData.billAmount || 0),
+                  accountId: account?.accountNumber || "DEMO",
+                  details: {
+                    service: billServiceForDb,
+                    providerId: selectedProviderId,
+                    billService: billService, // Add billService for receipt building
+                    formData: formData, // Add formData for receipt building
+                  },
+                },
+                returnPath: "/utilities/bill",
+              },
+            });
           }}
         >
-          {isPaying ? "Đang xử lý..." : "Tiếp tục"}
+          Tiếp tục
         </Button>
 
         {renderBillProviderSheet()}

@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { useUserAccount } from "@/hooks/useUserAccount";
 import { useEkycCheck } from "@/hooks/useEkycCheck";
 import { useNavigate } from "react-router-dom";
-import { payPhoneTopup } from "@/services/mobilePhonePaymentService";
 import { fbAuth, fbRtdb } from "@/lib/firebase";
 import { ref, get } from "firebase/database";
 
@@ -157,60 +156,37 @@ export default function UtilityPhoneTopup({ formData, setFormData }: Props) {
     loadAccounts();
   };
 
-  // Handle payment execution
-  const handlePayment = async () => {
+  // Handle payment execution - Navigate to PIN screen
+  const handlePayment = () => {
     if (!selectedAccountId) {
       toast.error("Vui lòng chọn tài khoản thanh toán");
       return;
     }
 
-    setProcessingPayment(true);
-    try {
-      const result = await payPhoneTopup({
-        phoneNumber: formData.phoneNumber,
-        telco: formData.telco,
-        topupAmount: Number(formData.topupAmount),
-        accountId: selectedAccountId,
-      });
+    // Close modal and navigate to PIN screen
+    setShowPaymentModal(false);
 
-      toast.success("Nạp tiền thành công!");
-
-      // Navigate to result page
-      navigate("/utilities/result", {
-        state: {
-          result: {
-            flow: "phone",
-            amount: formData.topupAmount,
-            title: "Nạp tiền điện thoại",
-            time: new Date().toLocaleString("vi-VN"),
-            fee: "0",
-            transactionId: result.transactionId,
-            details: [
-              { label: "Số điện thoại", value: formData.phoneNumber },
-              { label: "Nhà mạng", value: getTelcoLabel(formData.telco) },
-              {
-                label: "Mệnh giá",
-                value: `${Number(formData.topupAmount).toLocaleString(
-                  "vi-VN"
-                )} đ`,
-              },
-              { label: "Mã giao dịch", value: result.transactionId },
-            ],
+    // Navigate to PIN screen with payment request
+    navigate("/utilities/pin", {
+      state: {
+        pendingRequest: {
+          type: "PHONE_TOPUP",
+          amount: Number(formData.topupAmount),
+          accountId: selectedAccountId,
+          details: {
+            phoneNumber: formData.phoneNumber,
+            telco: formData.telco,
+            formData: {
+              phoneNumber: formData.phoneNumber,
+              telco: formData.telco,
+              topupAmount: formData.topupAmount,
+            },
+            source: "home",
           },
-          source: "home",
         },
-      });
-    } catch (error) {
-      console.error("Payment error:", error);
-      if (error instanceof Error) {
-        toast.error(error.message);
-      } else {
-        toast.error("Thanh toán thất bại");
-      }
-    } finally {
-      setProcessingPayment(false);
-      setShowPaymentModal(false);
-    }
+        returnPath: "/utilities/phone",
+      },
+    });
   };
 
   return (
