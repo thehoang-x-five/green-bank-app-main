@@ -224,11 +224,22 @@ export default function UtilityOtpConfirm() {
           pendingRequest.details.formData as any
         );
 
+        // ✅ Override amount and pack name from pendingRequest.details
+        const packName = pendingRequest.details.packName || "-";
+        const amount = pendingRequest.amount || 0;
+
         navigate("/utilities/result", {
           state: {
             result: {
               ...receiptResult,
               transactionId,
+              amount: amount.toLocaleString("vi-VN"),
+              details: receiptResult.details.map((detail) => {
+                if (detail.label === "Gói data") {
+                  return { ...detail, value: packName };
+                }
+                return detail;
+              }),
             },
             source: pendingRequest.details.source || "home",
           },

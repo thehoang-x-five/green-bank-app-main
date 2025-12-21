@@ -249,6 +249,73 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
     setShowPaymentModal(true);
   };
 
+  // Handle data pack payment (for Mua 3G/4G and Data 4G tab) - Navigate to PIN screen
+  const handleDataPackPayment = async (pack: {
+    id: string;
+    name: string;
+    price: number;
+    description?: string;
+  }) => {
+    console.log("=== handleDataPackPayment called ===");
+    console.log("pack:", pack);
+    console.log("formData.dataPhone:", formData.dataPhone);
+    console.log("account:", account);
+    console.log("isVerified:", isVerified);
+    console.log("isMua3G4G:", isMua3G4G);
+
+    // Validate phone number
+    const phoneToUse = isMua3G4G ? formData.dataPhone : formData.dataPhone;
+    if (!validatePhoneNumber(phoneToUse)) {
+      console.log("ERROR: Invalid phone number");
+      toast.error("Vui lòng nhập số điện thoại hợp lệ");
+      return;
+    }
+
+    // Validate account
+    if (!account || !account.accountNumber) {
+      console.log("ERROR: No account found");
+      toast.error("Không tìm thấy tài khoản thanh toán");
+      return;
+    }
+
+    // ✅ [PATCH-MUA3G4G-NO-DOUBLE-EKYC-CHECK]
+    // Không cần kiểm tra eKYC ở đây vì đã kiểm tra trong handleContinuePayment() rồi
+    // Chỉ kiểm tra eKYC khi gọi trực tiếp từ Data 4G tab (không qua modal)
+    if (!isMua3G4G && !isVerified) {
+      console.log("ERROR: eKYC not verified (Data 4G tab)");
+      toast.error(
+        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
+      );
+      return;
+    }
+
+    console.log("=== All validations passed, navigating to PIN screen ===");
+    // Navigate to PIN screen with payment request
+    navigate("/utilities/pin", {
+      state: {
+        pendingRequest: {
+          type: "DATA_PACK",
+          amount: pack.price,
+          accountId: account.accountNumber,
+          details: {
+            phoneNumber: phoneToUse,
+            telco: detectTelcoByPhone(phoneToUse),
+            packId: pack.id,
+            packName: pack.name,
+            formData: {
+              dataPhone: phoneToUse,
+              dataTelco: detectTelcoByPhone(phoneToUse),
+              dataPack: pack.id,
+            },
+            source: "home",
+          },
+        },
+        returnPath: "/utilities/data",
+      },
+    });
+    console.log("=== Navigate called ===");
+  };
+
   // ✅ [PATCH-MUA3G4G-PAYMENT-MODAL] Hàm xử lý thanh toán từ modal
   const handlePaymentFromModal = () => {
     console.log("=== handlePaymentFromModal called ===");
@@ -556,73 +623,6 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
         },
       },
     });
-  };
-
-  // Handle data pack payment (for Mua 3G/4G and Data 4G tab) - Navigate to PIN screen
-  const handleDataPackPayment = async (pack: {
-    id: string;
-    name: string;
-    price: number;
-    description?: string;
-  }) => {
-    console.log("=== handleDataPackPayment called ===");
-    console.log("pack:", pack);
-    console.log("formData.dataPhone:", formData.dataPhone);
-    console.log("account:", account);
-    console.log("isVerified:", isVerified);
-    console.log("isMua3G4G:", isMua3G4G);
-
-    // Validate phone number
-    const phoneToUse = isMua3G4G ? formData.dataPhone : formData.dataPhone;
-    if (!validatePhoneNumber(phoneToUse)) {
-      console.log("ERROR: Invalid phone number");
-      toast.error("Vui lòng nhập số điện thoại hợp lệ");
-      return;
-    }
-
-    // Validate account
-    if (!account || !account.accountNumber) {
-      console.log("ERROR: No account found");
-      toast.error("Không tìm thấy tài khoản thanh toán");
-      return;
-    }
-
-    // ✅ [PATCH-MUA3G4G-NO-DOUBLE-EKYC-CHECK]
-    // Không cần kiểm tra eKYC ở đây vì đã kiểm tra trong handleContinuePayment() rồi
-    // Chỉ kiểm tra eKYC khi gọi trực tiếp từ Data 4G tab (không qua modal)
-    if (!isMua3G4G && !isVerified) {
-      console.log("ERROR: eKYC not verified (Data 4G tab)");
-      toast.error(
-        "Khách hàng chưa hoàn tất eKYC nên không thể thực hiện thanh toán"
-      );
-      return;
-    }
-
-    console.log("=== All validations passed, navigating to PIN screen ===");
-    // Navigate to PIN screen with payment request
-    navigate("/utilities/pin", {
-      state: {
-        pendingRequest: {
-          type: "DATA_PACK",
-          amount: pack.price,
-          accountId: account.accountNumber,
-          details: {
-            phoneNumber: phoneToUse,
-            telco: detectTelcoByPhone(phoneToUse),
-            packId: pack.id,
-            packName: pack.name,
-            formData: {
-              dataPhone: phoneToUse,
-              dataTelco: detectTelcoByPhone(phoneToUse),
-              dataPack: pack.id,
-            },
-            source: "home",
-          },
-        },
-        returnPath: "/utilities/data",
-      },
-    });
-    console.log("=== Navigate called ===");
   };
 
   // Handle phone topup payment (for Data 4G phone tab) - Navigate to PIN screen
