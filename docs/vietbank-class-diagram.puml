@@ -1,36 +1,38 @@
-@startuml VietBank - Domain Class Diagram (UML)
+@startuml VietBank - Domain Class Diagram
 
-' ====== METADATA ======
-title VietBank Digital Banking System\nDomain Class Diagram
-footer Generated: %date("yyyy-MM-dd")
-scale 1.2
+' ========== METADATA ==========
+title VietBank Digital Banking System - Domain Model
+footer Last Updated: %date("yyyy-MM-dd") | Source: TypeScript Services
+scale 1.0
 
-' ====== LAYOUT ======
-left to right direction
+' ========== STYLING ==========
 skinparam linetype ortho
 skinparam shadowing false
 skinparam packageStyle rectangle
 skinparam classAttributeIconSize 0
-skinparam wrapWidth 260
+skinparam wrapWidth 200
 hide methods
 
-' ====== COLORS ======
 skinparam class {
   BackgroundColor<<Entity>> #E8F5E9
   BorderColor<<Entity>> #4CAF50
   BackgroundColor<<ValueObject>> #FFF3E0
   BorderColor<<ValueObject>> #FF9800
+  BackgroundColor<<Service>> #E3F2FD
+  BorderColor<<Service>> #2196F3
 }
+
 skinparam package {
-  BackgroundColor #F5F5F5
+  BackgroundColor #FAFAFA
   BorderColor #9E9E9E
+  FontStyle bold
 }
 
-' ====== DOMAIN: CORE BANKING ======
-package "Core Banking" {
-
+' ========== CORE BANKING DOMAIN ==========
+package "Core Banking Domain" {
+  
   class AppUserProfile <<Entity>> {
-    +uid: string {id}
+    +uid: string {PK}
     +username: string
     +email: string {unique}
     +role: AppUserRole
@@ -38,19 +40,15 @@ package "Core Banking" {
     +ekycStatus: EkycStatus
     +canTransact: boolean
     +createdAt: number
-
-    +phone: string {optional}
-    +gender: string {optional}
-    +dob: string {optional}
-    +nationalId: string {optional, unique}
-    +idIssueDate: string {optional}
-    +placeOfIssue: string {optional}
-    +permanentAddress: string {optional}
-    +contactAddress: string {optional}
-    +cif: string {optional, unique}
-    +frontIdUrl: string {optional}
-    +backIdUrl: string {optional}
-    +selfieUrl: string {optional}
+    --
+    +phone?: string
+    +gender?: string
+    +dob?: string
+    +nationalId?: string {unique}
+    +cif?: string {unique}
+    +transactionPinHash?: string
+    +pinFailCount?: number
+    +loginFailCount?: number
   }
 
   enum AppUserRole {
@@ -70,11 +68,11 @@ package "Core Banking" {
   }
 
   class BankAccount <<Entity>> {
-    +accountNumber: string {id}
-    +uid: string {fk}
+    +accountNumber: string {PK}
+    +uid: string {FK}
     +balance: number
     +status: AccountStatus
-    +pin: string {optional}
+    +pin?: string
     +createdAt: number
   }
 
@@ -84,29 +82,23 @@ package "Core Banking" {
   }
 
   class Transaction <<Entity>> {
-    +transactionId: string {id}
+    +transactionId: string {PK}
     +type: TransactionType
     +status: TransactionStatus
-    +customerUid: string {fk}
-
-    +sourceAccountNumber: string {fk}
+    +customerUid: string {FK}
+    +sourceAccountNumber: string {FK}
     +destinationAccountNumber: string
     +destinationName: string
     +destinationBankName: string
-    +destinationBankCode: string
-
     +amount: number
     +fee: number
     +content: string
     +createdAt: number
-    +executedAt: number
-
-    +isInternal: boolean {optional}
-    +destAccUid: string {optional, fk}
-    +requiresBiometric: boolean {optional}
-    +biometricVerifiedAt: number {optional}
+    +executedAt?: number
+    +requiresBiometric?: boolean
+    +biometricVerifiedAt?: number
   }
-  
+
   enum TransactionType {
     TRANSFER_INTERNAL
     TRANSFER_EXTERNAL
@@ -114,9 +106,14 @@ package "Core Banking" {
     CASH_WITHDRAW
     MOVIE_BOOKING
     HOTEL_BOOKING
+    FLIGHT_BOOKING
+    UTILITY_BILL_PAYMENT
+    PHONE_TOPUP
+    DATA_PACK_PURCHASE
   }
-  
+
   enum TransactionStatus {
+    PENDING
     PENDING_OTP
     PROCESSING
     SUCCESS
@@ -124,8 +121,8 @@ package "Core Banking" {
   }
 
   class OtpData <<Entity>> {
-    +transactionId: string
-    +uid: string
+    +transactionId: string {PK,FK}
+    +uid: string {FK}
     +email: string
     +otp: string
     +createdAt: number
@@ -133,32 +130,55 @@ package "Core Banking" {
     +attemptsLeft: number
     +used: boolean
   }
+
+  class Notification <<Entity>> {
+    +notificationId: string {PK}
+    +uid: string {FK}
+    +type: NotificationType
+    +direction?: Direction
+    +title: string
+    +message: string
+    +amount?: number
+    +accountNumber?: string
+    +balanceAfter?: number
+    +transactionId?: string
+    +createdAt: number
+    +read: boolean
+  }
+
+  enum NotificationType {
+    BALANCE_CHANGE
+    SYSTEM
+    PROMOTION
+  }
+
+  enum Direction {
+    IN
+    OUT
+  }
 }
 
-' ====== DOMAIN: EKYC ======
-package "eKYC" {
+' ========== EKYC DOMAIN ==========
+package "eKYC Domain" {
+  
   class EkycSession <<Entity>> {
-    +uid: string {optional}
-    +email: string {optional}
-    +fullName: string {optional}
-    +dob: string {optional}
-    +nationalId: string {optional}
-    +address: string {optional}
-    +gender: string {optional}
-    +idIssueDate: string {optional}
-
-    +submittedAt: number {optional}
-    +updatedAt: number {optional}
-    +status: EkycSessionStatus {optional}
-
-    +frontIdUrl: string {optional}
-    +backIdUrl: string {optional}
-    +selfieUrl: string {optional}
-
-    +approvedAt: number {optional}
-    +rejectedAt: number {optional}
-    +rejectReason: string {optional}
-    +cif: string {optional}
+    +emailKey: string {PK}
+    +uid?: string {FK}
+    +email: string
+    +fullName?: string
+    +dob?: string
+    +nationalId?: string
+    +address?: string
+    +gender?: string
+    +status: EkycSessionStatus
+    +frontIdUrl?: string
+    +backIdUrl?: string
+    +selfieUrl?: string
+    +submittedAt?: number
+    +approvedAt?: number
+    +rejectedAt?: number
+    +rejectReason?: string
+    +cif?: string
   }
 
   enum EkycSessionStatus {
@@ -169,14 +189,14 @@ package "eKYC" {
   }
 }
 
-' ====== DOMAIN: UTILITIES - MOVIE BOOKING ======
-package "Utilities - Movie Booking" {
-
+' ========== MOVIE BOOKING DOMAIN ==========
+package "Movie Booking Domain" {
+  
   class Cinema <<Entity>> {
-    +id: string
+    +id: string {PK}
     +name: string
     +address: string
-    +cityKey: string
+    +cityKey: string {indexed}
     +lat: number
     +lon: number
     +rooms: number
@@ -184,21 +204,21 @@ package "Utilities - Movie Booking" {
   }
 
   class Movie <<Entity>> {
-    +id: string
+    +id: string {PK}
     +title: string
     +genre: string
     +duration: number
     +rating: string
     +description: string
     +posterUrl: string
-    +trailerUrl: string {optional}
-    +images: string[] {optional}
+    +trailerUrl?: string
+    +images?: string[]
   }
 
   class Showtime <<Entity>> {
-    +id: string
-    +cinemaId: string
-    +movieId: string
+    +id: string {PK}
+    +cinemaId: string {FK}
+    +movieId: string {FK}
     +date: string
     +time: string
     +room: number
@@ -207,91 +227,69 @@ package "Utilities - Movie Booking" {
     +pricePerSeat: number
   }
 
-  class Seat <<ValueObject>> {
-    +id: string
-    +row: string
-    +number: number
-    +status: SeatStatus
-  }
-
-  enum SeatStatus {
-    available
-    occupied
-    selected
-  }
-
   class MovieBooking <<Entity>> {
-    +id: string {id}
-    +userId: string {fk}
-    +cinemaId: string {fk}
-    +cinemaName: string
-    +movieId: string {fk}
-    +movieTitle: string
-    +showtimeId: string {fk}
+    +id: string {PK}
+    +userId: string {FK}
+    +cinemaId: string {FK}
+    +movieId: string {FK}
+    +showtimeId: string {FK}
     +date: string
     +time: string
-    +room: number
     +selectedSeats: string[]
     +totalAmount: number
-    +accountId: string {fk}
+    +accountId: string {FK}
     +status: BookingStatus
     +createdAt: number
   }
-  
+
   enum BookingStatus {
     confirmed
     cancelled
   }
 }
 
-' ====== DOMAIN: UTILITIES - HOTEL BOOKING ======
-package "Utilities - Hotel Booking" {
-
+' ========== HOTEL BOOKING DOMAIN ==========
+package "Hotel Booking Domain" {
+  
   class HotelItem <<Entity>> {
-    +id: string
+    +id: string {PK}
     +name: string
+    +cityKey: string {indexed}
     +lat: number
     +lon: number
     +stars: number
     +rating: number
     +priceFrom: number
-    +distanceToCenterKm: number {optional}
-    +images: string[] {optional}
-    +cityKey: string
+    +images?: string[]
   }
 
   class HotelRoom <<Entity>> {
-    +id: string
-    +hotelId: string
+    +id: string {PK}
+    +hotelId: string {FK}
     +name: string
     +pricePerNight: number
     +perks: string[]
-    +refundable: boolean {optional}
+    +refundable?: boolean
   }
 
   class HotelBooking <<Entity>> {
-    +id: string {id}
+    +id: string {PK}
     +status: HotelBookingStatus
-    +customerUid: string {fk}
-    +hotelId: string {fk}
-    +hotelName: string
-    +roomId: string {fk}
-    +roomName: string
-
+    +customerUid: string {FK}
+    +hotelId: string {FK}
+    +roomId: string {FK}
     +checkIn: string
     +checkOut: string
     +checkInDateTime: number
     +checkOutDateTime: number
     +nights: number
-
     +guests: number
     +rooms: number
     +total: number
-
-    +transactionId: string {fk}
+    +transactionId: string {FK}
     +createdAt: number
   }
-  
+
   enum HotelBookingStatus {
     PAID
     CANCELLED
@@ -299,68 +297,169 @@ package "Utilities - Hotel Booking" {
   }
 }
 
-' ==========================================================
-' ASSOCIATIONS (Multiplicities & Constraints)
-' ==========================================================
+' ========== FLIGHT BOOKING DOMAIN ==========
+package "Flight Booking Domain" {
+  
+  class FlightOption <<Entity>> {
+    +id: string {PK}
+    +airline: string
+    +code: string
+    +fromCode: string
+    +fromName: string
+    +toCode: string
+    +toName: string
+    +departTime: string
+    +arriveTime: string
+    +duration: string
+    +cabin: string
+    +price: number
+  }
 
-' Core banking
+  class FlightBooking <<Entity>> {
+    +bookingId: string {PK}
+    +userId: string {FK}
+    +flightId: string {FK}
+    +departDate: string
+    +adults: number
+    +children: number
+    +infants: number
+    +totalAmount: number
+    +accountId: string {FK}
+    +status: string
+    +transactionId: string {FK}
+    +orderId: string
+    +createdAt: number
+  }
+}
+
+' ========== UTILITY SERVICES DOMAIN ==========
+package "Utility Services Domain" {
+  
+  class UtilityBill <<Entity>> {
+    +providerId: string {PK}
+    +providerName: string
+    +service: UtilityServiceType
+    +amount: number
+    +status: BillStatus
+    +updatedAt?: number
+    +paidAt?: number
+  }
+
+  enum UtilityServiceType {
+    electric
+    water
+  }
+
+  enum BillStatus {
+    UNPAID
+    PAID
+  }
+}
+
+' ========== RELATIONSHIPS ==========
+
+' Core Banking
 AppUserProfile "1" -- "0..*" BankAccount : owns >
 AppUserProfile "1" -- "0..*" Transaction : initiates >
+AppUserProfile "1" -- "0..*" Notification : receives >
 Transaction "1" -- "0..1" OtpData : requires >
+BankAccount "1" -- "0..*" Transaction : source >
+
+' eKYC
 AppUserProfile "1" -- "0..1" EkycSession : submits >
 
-' Movie booking domain
+' Movie Booking
 Cinema "1" -- "0..*" Showtime : hosts >
-Movie  "1" -- "0..*" Showtime : schedules >
-Showtime "1" *-- "96" Seat : contains >
+Movie "1" -- "0..*" Showtime : schedules >
 AppUserProfile "1" -- "0..*" MovieBooking : places >
 MovieBooking "*" -- "1" Showtime : for >
-MovieBooking "*" -- "1" Cinema : at >
-MovieBooking "*" -- "1" Movie : includes >
 MovieBooking "*" -- "1" BankAccount : paidBy >
 
-' Hotel booking domain
+' Hotel Booking
 HotelItem "1" *-- "1..*" HotelRoom : offers >
 HotelRoom "1" -- "0..*" HotelBooking : bookedIn >
 AppUserProfile "1" -- "0..*" HotelBooking : places >
-HotelBooking "*" -- "1" HotelItem : at >
-HotelBooking "*" -- "1" HotelRoom : reserves >
 HotelBooking "1" -- "1" Transaction : paidWith >
 
-' ==========================================================
-' NOTES & CONSTRAINTS
-' ==========================================================
+' Flight Booking
+AppUserProfile "1" -- "0..*" FlightBooking : places >
+FlightBooking "*" -- "1" FlightOption : for >
+FlightBooking "*" -- "1" BankAccount : paidBy >
+
+' Utility Services
+AppUserProfile "1" -- "0..*" UtilityBill : has >
+
+' ========== NOTES ==========
 
 note right of Transaction
-  <b>Business Rules:</b>
-  • requiresBiometric = true if amount >= 10M VND
-  • OTP expires after 2 minutes
+  <b>Security Rules:</b>
+  • Biometric required if amount >= 10M VND
+  • OTP expires after 2 minutes (120s)
   • Max 5 OTP attempts
-  • Atomic balance deduction
+  • Atomic balance operations
+  • PIN verification mandatory
+end note
+
+note right of AppUserProfile
+  <b>Account Security:</b>
+  • Login lock after 5 failed attempts
+  • PIN lock after 5 failed attempts
+  • eKYC verification required for transactions
+  • Biometric login supported (demo mode)
+  • Strong password policy enforced
 end note
 
 note right of Showtime
   <b>Seat Booking:</b>
-  • 8 rows (A-H) × 12 seats = 96 total
+  • 96 seats total (8 rows × 12 seats)
   • occupiedSeats updated atomically
-  • Prevents double-booking
+  • Prevents double-booking via arrayUnion
+  • Real-time availability check
 end note
 
 note right of HotelBooking
   <b>Room Availability:</b>
-  • Check-in: 14:00
-  • Check-out: 12:00
-  • Overlap detection:
-    checkIn < existingCheckOut AND
-    checkOut > existingCheckIn
+  • Check-in: 14:00 (2 PM)
+  • Check-out: 12:00 (noon)
+  • Overlap detection algorithm:
+    requestCheckIn < existingCheckOut AND
+    requestCheckOut > existingCheckIn
 end note
 
-note right of AppUserProfile
-  <b>Security:</b>
-  • Login lock after 5 failed attempts
-  • PIN lock after 5 failed attempts
-  • eKYC required for transactions
-  • Biometric login supported
+note right of OtpData
+  <b>OTP Verification:</b>  
+  • 6-digit numeric code
+  • 2-minute expiration
+  • Max 5 verification attempts
+  • One-time use only
+  • Sent via EmailJS/Apps Script
 end note
+
+' ========== LEGEND ==========
+
+legend right
+  <b>Entity Types:</b>
+  <color:#4CAF50>█</color> Entity (Domain Object)
+  <color:#FF9800>█</color> Value Object
+  <color:#2196F3>█</color> Service
+  
+  <b>Notation:</b>
+  {PK} = Primary Key
+  {FK} = Foreign Key
+  {unique} = Unique constraint
+  {indexed} = Database index
+  ? = Optional field
+  
+  <b>Relationships:</b>
+  -- = Association
+  *-- = Composition
+  o-- = Aggregation
+  
+  <b>Multiplicity:</b>
+  1 = Exactly one
+  0..1 = Zero or one
+  0..* = Zero or many
+  1..* = One or many
+end legend
 
 @enduml
