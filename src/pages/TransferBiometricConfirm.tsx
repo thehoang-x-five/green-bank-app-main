@@ -51,8 +51,7 @@ function generateSessionId(): string {
 }
 
 function toNonNegInt(v: unknown): number {
-  if (typeof v === "number" && Number.isFinite(v))
-    return Math.max(0, Math.floor(v));
+  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.floor(v));
   if (typeof v === "string") {
     const n = Number(v);
     if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
@@ -79,11 +78,7 @@ function pickFirstKeyOfRecord(v: unknown): string | null {
  */
 async function resolveAccountRefByAccountNumber(
   accountNumber: string
-): Promise<{
-  accRef: DatabaseReference;
-  acc: RtdbAccountLite;
-  key: string;
-} | null> {
+): Promise<{ accRef: DatabaseReference; acc: RtdbAccountLite; key: string } | null> {
   const target = accountNumber.trim();
   if (!target) return null;
 
@@ -119,10 +114,7 @@ async function resolveAccountRefByAccountNumber(
     const item = raw[k];
     if (typeof item === "object" && item !== null) {
       const acc = item as Record<string, unknown>;
-      const accNo =
-        typeof acc.accountNumber === "string"
-          ? acc.accountNumber
-          : String(acc.accountNumber ?? "");
+      const accNo = typeof acc.accountNumber === "string" ? acc.accountNumber : String(acc.accountNumber ?? "");
       if (accNo.trim() === target) {
         pickedKey = k;
         break;
@@ -150,15 +142,12 @@ async function ensureAccountNotLocked(
   const resolved = await resolveAccountRefByAccountNumber(sourceAccountNumber);
   if (!resolved) return; // không resolve được thì không tự block ở đây
 
-  const ownerUid =
-    typeof resolved.acc.uid === "string" ? resolved.acc.uid.trim() : "";
+  const ownerUid = typeof resolved.acc.uid === "string" ? resolved.acc.uid.trim() : "";
   if (ownerUid && ownerUid !== uid) return; // không phải tài khoản của user hiện tại
 
   const st = normalizeStatus(resolved.acc.status);
   if (st === "LOCKED") {
-    throw new Error(
-      "Tài khoản thanh toán đang bị tạm khóa. Vui lòng liên hệ nhân viên để mở lại."
-    );
+    throw new Error("Tài khoản thanh toán đang bị tạm khóa. Vui lòng liên hệ nhân viên để mở lại.");
   }
 }
 
@@ -166,10 +155,7 @@ async function ensureAccountNotLocked(
  * ✅ Lock đồng bộ: users/{uid}.status + accounts/{account}.status
  * (Đây là chỗ fix đúng lỗi anh gặp: toast báo khóa nhưng node account vẫn ACTIVE)
  */
-async function lockUserAndSourceAccount(
-  uid: string,
-  sourceAccountNumber: string
-): Promise<void> {
+async function lockUserAndSourceAccount(uid: string, sourceAccountNumber: string): Promise<void> {
   const now = Date.now();
 
   // 1) lock user
@@ -183,8 +169,7 @@ async function lockUserAndSourceAccount(
   const resolved = await resolveAccountRefByAccountNumber(sourceAccountNumber);
   if (!resolved) return;
 
-  const ownerUid =
-    typeof resolved.acc.uid === "string" ? resolved.acc.uid.trim() : "";
+  const ownerUid = typeof resolved.acc.uid === "string" ? resolved.acc.uid.trim() : "";
   if (ownerUid && ownerUid !== uid) return;
 
   await update(resolved.accRef, {
@@ -264,14 +249,10 @@ export default function TransferBiometricConfirm() {
 
     // ✅ Chặn nếu user LOCKED
     try {
-      const stSnap = await get(
-        ref(firebaseRtdb, `users/${currentUser.uid}/status`)
-      );
+      const stSnap = await get(ref(firebaseRtdb, `users/${currentUser.uid}/status`));
       const status = stSnap.exists() ? normalizeStatus(stSnap.val()) : "";
       if (status === "LOCKED") {
-        toast.error(
-          "Tài khoản đang bị tạm khóa. Vui lòng liên hệ nhân viên để mở lại."
-        );
+        toast.error("Tài khoản đang bị tạm khóa. Vui lòng liên hệ nhân viên để mở lại.");
         navigate("/transfer", { replace: true });
         return;
       }
@@ -281,13 +262,9 @@ export default function TransferBiometricConfirm() {
 
     // ✅ Chặn nếu account LOCKED (đúng nghiệp vụ “xét status account là chính”)
     try {
-      await ensureAccountNotLocked(
-        currentUser.uid,
-        pendingRequest.sourceAccountNumber
-      );
+      await ensureAccountNotLocked(currentUser.uid, pendingRequest.sourceAccountNumber);
     } catch (e: unknown) {
-      const msg =
-        e instanceof Error ? e.message : "Tài khoản đang bị tạm khóa.";
+      const msg = e instanceof Error ? e.message : "Tài khoản đang bị tạm khóa.";
       toast.error(msg);
       navigate("/transfer", { replace: true });
       return;
@@ -317,9 +294,7 @@ export default function TransferBiometricConfirm() {
           );
 
           if (r.locked) {
-            toast.error(
-              "Bạn đã xác thực sinh trắc sai quá 5 lần. Tài khoản đã bị tạm khóa."
-            );
+            toast.error("Bạn đã xác thực sinh trắc sai quá 5 lần. Tài khoản đã bị tạm khóa.");
             navigate("/transfer", { replace: true });
             return;
           }
@@ -341,9 +316,7 @@ export default function TransferBiometricConfirm() {
       const resp = await initiateTransferToAccount(pendingRequest);
 
       if (!resp?.transactionId || resp.transactionId.trim() === "") {
-        throw new Error(
-          "Không tạo được giao dịch Smart-OTP (thiếu transactionId)."
-        );
+        throw new Error("Không tạo được giao dịch Smart-OTP (thiếu transactionId).");
       }
 
       // ✅ FIX OTP bị chặn: đánh dấu txn đã sinh trắc
@@ -363,17 +336,14 @@ export default function TransferBiometricConfirm() {
             sourceAccountNumber: pendingRequest.sourceAccountNumber,
             destinationAccountNumber: pendingRequest.destinationAccountNumber,
             destinationName:
-              pendingRequest.destinationName ??
-              pendingRequest.destinationAccountNumber,
+              pendingRequest.destinationName ?? pendingRequest.destinationAccountNumber,
             bankName: pendingRequest.bankName,
           },
         },
       });
     } catch (err: unknown) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "Có lỗi khi tạo Smart-OTP sau sinh trắc.";
+        err instanceof Error ? err.message : "Có lỗi khi tạo Smart-OTP sau sinh trắc.";
       setErrorText(message);
       toast.error(message);
       console.error("[TransferBiometricConfirm]", { sessionId, err });
@@ -428,15 +398,13 @@ export default function TransferBiometricConfirm() {
             <p>
               Người nhận:{" "}
               <span className="font-semibold">
-                {pendingRequest.destinationName} -{" "}
-                {pendingRequest.destinationAccountNumber} (
+                {pendingRequest.destinationName} - {pendingRequest.destinationAccountNumber} (
                 {pendingRequest.bankName})
               </span>
             </p>
             {isHighValue && (
               <p className="text-xs text-amber-600">
-                Giao dịch giá trị cao: cần xác thực sinh trắc trước khi nhập
-                Smart-OTP.
+                Giao dịch giá trị cao: cần xác thực sinh trắc trước khi nhập Smart-OTP.
               </p>
             )}
           </div>

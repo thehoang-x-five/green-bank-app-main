@@ -1,5 +1,5 @@
 // src/pages/TransferOtpConfirm.tsx
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
@@ -8,43 +8,93 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { confirmTransferWithOtp } from "@/services/transferService";
+import { confirmTransferWithOtp, resendTransferOtp } from "@/services/transferService";
+
+type TransferInfo = {
+  transactionId: string;
+
+  // Email OTP
+  maskedEmail?: string;
+  expireAt?: number;
+
+  // Backward-compat (nếu state cũ còn truyền)
+  otpCode?: string;
+
+  amount: number;
+  content?: string;
+  sourceAccountNumber: string;
+  destinationAccountNumber: string;
+  destinationName: string;
+  bankName: string;
+};
 
 type TransferState = {
-  transfer?: {
-    transactionId: string;
-    otpCode: string;
-    expireAt?: number;
-    amount: number;
-    content?: string;
-    sourceAccountNumber: string;
-    destinationAccountNumber: string;
-    destinationName: string;
-    bankName: string;
-  };
+  transfer?: TransferInfo;
 };
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function formatRemainMmSs(remainSec: number): string {
+  const safe = Math.max(0, remainSec);
+  const mm = Math.floor(safe / 60);
+  const ss = safe % 60;
+  return `${pad2(mm)}:${pad2(ss)}`;
+}
 
 const TransferOtpConfirm = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
   const state = location.state as TransferState | undefined;
-  const transfer = state?.transfer;
+  const initialTransfer = state?.transfer;
+
+  const [transfer, setTransfer] = useState<TransferInfo | null>(
+    initialTransfer ?? null
+  );
 
   const [otp, setOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
-  if (!transfer) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="space-y-4 text-center">
-          <p className="text-sm text-muted-foreground">
-            Thiếu thông tin giao dịch. Vui lòng thực hiện chuyển khoản lại.
-          </p>
-          <Button onClick={() => navigate("/transfer")}>Quay lại</Button>
-        </div>
+  // tick để countdown
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(t);
+  }, []);
+
+  // Nếu thiếu state -> UI fallback
+  // ✅ luôn tính expireAt trước (fallback) để hook không bị gọi conditionally
+const expireAtRaw = transfer?.expireAt;
+const expireAtSafe = typeof expireAtRaw === "number" ? expireAtRaw : 0;
+
+const remainSec = useMemo(() => {
+  if (!expireAtSafe) return 0;
+  const remainMs = Math.max(0, expireAtSafe - nowMs);
+  return Math.ceil(remainMs / 1000);
+}, [expireAtSafe, nowMs]);
+
+const canResend = remainSec <= 0;
+
+// ✅ UI fallback để dưới hook
+if (!transfer) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="space-y-4 text-center">
+        <p className="text-sm text-muted-foreground">
+          Thiếu thông tin giao dịch. Vui lòng thực hiện chuyển khoản lại.
+        </p>
+        <Button onClick={() => navigate("/transfer")}>Quay lại</Button>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+
+  const emailText =
+    (transfer.maskedEmail && transfer.maskedEmail.trim()) || "email đã đăng ký";
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -91,19 +141,44 @@ const TransferOtpConfirm = () => {
       });
     } catch (err: unknown) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "Có lỗi xảy ra khi xác nhận giao dịch.";
+        err instanceof Error ? err.message : "Có lỗi xảy ra khi xác nhận giao dịch.";
       toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formattedOtp =
-    transfer.otpCode && transfer.otpCode.length === 6
-      ? transfer.otpCode.split("").join(" ")
-      : "";
+  const handleResend = async (): Promise<void> => {
+    // ✅ Ràng buộc: chỉ được gửi lại khi OTP đã hết hạn
+    if (!canResend) {
+      toast.error(`OTP hiện tại chưa hết hạn. Vui lòng chờ ${formatRemainMmSs(remainSec)}.`);
+      return;
+    }
+
+    setIsResending(true);
+    try {
+      const resp = await resendTransferOtp(transfer.transactionId);
+
+      toast.success("Đã gửi OTP mới tới email. Vui lòng kiểm tra hộp thư.");
+
+      setOtp("");
+
+      setTransfer((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          maskedEmail: resp.maskedEmail,
+          expireAt: resp.expireAt,
+        };
+      });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Không thể gửi lại OTP.";
+      toast.error(message);
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -112,11 +187,12 @@ const TransferOtpConfirm = () => {
           <button
             onClick={() => navigate(-1)}
             className="text-primary-foreground hover:bg-white/20 rounded-full p-2 transition-colors"
+            disabled={isSubmitting || isResending}
           >
             <ArrowLeft size={24} />
           </button>
           <h1 className="text-xl font-bold text-primary-foreground">
-            Xác thực Smart-OTP
+            Xác thực OTP Email
           </h1>
         </div>
       </div>
@@ -125,11 +201,16 @@ const TransferOtpConfirm = () => {
         <Card className="p-6 space-y-4">
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
-              Vui lòng nhập mã Smart-OTP để xác nhận giao dịch chuyển tiền.
+              Mã OTP đã được gửi tới email <span className="font-semibold">{emailText}</span>.
+            </p>
+
+            <p className="text-sm text-muted-foreground">
+              OTP hết hạn sau:{" "}
+              <span className="font-semibold">{formatRemainMmSs(remainSec)}</span>
             </p>
           </div>
 
-          <div className="space-y-1 text-sm">
+          <div className="space-y-1 text-sm pt-2">
             <p>
               Số tiền:{" "}
               <span className="font-semibold">
@@ -138,33 +219,20 @@ const TransferOtpConfirm = () => {
             </p>
             <p>
               Tài khoản nguồn:{" "}
-              <span className="font-semibold">
-                {transfer.sourceAccountNumber}
-              </span>
+              <span className="font-semibold">{transfer.sourceAccountNumber}</span>
             </p>
             <p>
               Người nhận:{" "}
               <span className="font-semibold">
-                {transfer.destinationName} - {transfer.destinationAccountNumber}{" "}
-                ({transfer.bankName})
+                {transfer.destinationName} - {transfer.destinationAccountNumber} (
+                {transfer.bankName})
               </span>
             </p>
           </div>
 
-          {formattedOtp && (
-            <div className="pt-2 pb-1">
-              <p className="text-xs text-muted-foreground text-center mb-1">
-                Mã Smart-OTP cho giao dịch này:
-              </p>
-              <div className="text-2xl font-mono text-center tracking-[0.5em]">
-                {formattedOtp}
-              </div>
-            </div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label htmlFor="otp">Nhập lại mã OTP</Label>
+              <Label htmlFor="otp">Mã OTP</Label>
               <Input
                 id="otp"
                 type="text"
@@ -173,11 +241,26 @@ const TransferOtpConfirm = () => {
                 placeholder="Nhập 6 chữ số OTP"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                disabled={isSubmitting || isResending}
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button type="submit" className="w-full" disabled={isSubmitting || isResending}>
               {isSubmitting ? "Đang xác thực..." : "Xác nhận thanh toán"}
+            </Button>
+
+            <Button
+              type="button"
+              className="w-full"
+              variant="outline"
+              onClick={() => void handleResend()}
+              disabled={!canResend || isSubmitting || isResending}
+            >
+              {isResending
+                ? "Đang gửi..."
+                : canResend
+                ? "Gửi lại OTP"
+                : `Gửi lại OTP (${formatRemainMmSs(remainSec)})`}
             </Button>
           </form>
         </Card>

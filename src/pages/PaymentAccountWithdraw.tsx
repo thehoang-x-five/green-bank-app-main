@@ -3,25 +3,26 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { toast } from "sonner";
-import { getUserProfile } from "@/services/userService";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
-import { firebaseAuth, firebaseRtdb } from "@/lib/firebase";
+import { firebaseAuth } from "@/lib/firebase";
 import {
   getPrimaryAccount,
   getCustomerDisplayName,
-  withdrawFromPaymentAccount,
+  initiateWithdrawFromPaymentAccountOtp,
   type BankAccount,
 } from "@/services/accountService";
-import { push, ref, set } from "firebase/database";
 
-// Kiểu direction cho log biến động
-type Direction = "IN" | "OUT";
+import { getUserProfile } from "@/services/userService";
+import { verifyTransactionPin } from "@/services/userService";
+import { requireBiometricForHighValueVnd } from "@/services/biometricService";
 
-// ✅ Helper format/parse số tiền nhập (không đổi logic submit)
+const HIGH_VALUE_THRESHOLD_VND = 10_000_000;
+
+// ✅ Helper format/parse số tiền nhập
 const formatVndInput = (raw: string): string => {
   const digitsOnly = raw.replace(/[^\d]/g, "");
   if (!digitsOnly) return "";
@@ -37,43 +38,6 @@ const parseVndInput = (formatted: string): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Helper: ghi log biến động số dư (Nạp / Rút)
-async function createBalanceChangeNotification(params: {
-  uid: string;
-  direction: Direction;
-  title: string;
-  message: string;
-  amount: number;
-  accountNumber: string;
-  balanceAfter: number;
-}): Promise<void> {
-  const {
-    uid,
-    direction,
-    title,
-    message,
-    amount,
-    accountNumber,
-    balanceAfter,
-  } = params;
-
-  const notiListRef = ref(firebaseRtdb, `notifications/${uid}`);
-  const newRef = push(notiListRef);
-  const createdAt = Date.now();
-
-  await set(newRef, {
-    type: "BALANCE_CHANGE",
-    direction,
-    title,
-    message,
-    amount,
-    accountNumber,
-    balanceAfter,
-    transactionId: newRef.key,
-    createdAt,
-  });
-}
-
 const PaymentAccountWithdraw = () => {
   const navigate = useNavigate();
 
@@ -88,7 +52,6 @@ const PaymentAccountWithdraw = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
 
-  // Lấy user + primary account giống PaymentAccountDetail
   useEffect(() => {
     const unsub = onAuthStateChanged(firebaseAuth, async (user) => {
       setFirebaseUser(user);
@@ -125,7 +88,6 @@ const PaymentAccountWithdraw = () => {
     e.preventDefault();
     setErrorMsg("");
 
-    // ✅ FIX: parse số tiền đã format "1.000.000" -> 1000000
     const numericAmount = parseVndInput(amount);
     if (!numericAmount || numericAmount <= 0) {
       setErrorMsg("Vui lòng nhập số tiền rút hợp lệ.");
@@ -150,42 +112,46 @@ const PaymentAccountWithdraw = () => {
     try {
       setSubmitting(true);
 
-      // 1. Thực hiện rút tiền
-      await withdrawFromPaymentAccount(firebaseUser.uid, {
-        amount: numericAmount,
-        pin,
-      });
+      // ✅ Kiểm tra PIN trước
+      await verifyTransactionPin(firebaseUser.uid, pin);
+      
+      // ✅ PIN đúng -> kiểm tra có cần sinh trắc không
+      if (numericAmount >= HIGH_VALUE_THRESHOLD_VND) {
+        // Chuyển sang màn hình sinh trắc
+        navigate("/accounts/payment/withdraw/biometric", {
+          state: {
+            pendingWithdraw: {
+              amount: numericAmount,
+              pin,
+              accountNumber: account.accountNumber,
+            },
+          },
+        });
+      } else {
+        // Không cần sinh trắc -> tạo OTP luôn
+        const resp = await initiateWithdrawFromPaymentAccountOtp(firebaseUser.uid, {
+          amount: numericAmount,
+          pin,
+          accountNumber: account.accountNumber,
+        });
 
-      // 2. Tính số dư sau rút (xấp xỉ dựa trên số dư hiện tại - số tiền rút)
-      const currentBalance =
-        typeof account.balance === "number"
-          ? account.balance
-          : Number(account.balance ?? 0);
-      const balanceAfter = currentBalance - numericAmount;
+        toast.success(`OTP đã được gửi về email ${resp.maskedEmail}.`);
 
-      // 3. Ghi log biến động số dư vào notifications/{uid}
-      const title = "Rút tiền từ tài khoản thanh toán";
-      const message = `Rút ${numericAmount.toLocaleString(
-        "vi-VN"
-      )} VND từ tài khoản ${account.accountNumber}.`;
-
-      await createBalanceChangeNotification({
-        uid: firebaseUser.uid,
-        direction: "OUT",
-        title,
-        message,
-        amount: numericAmount,
-        accountNumber: account.accountNumber,
-        balanceAfter,
-      });
-
-      toast.success("Rút tiền thành công từ tài khoản thanh toán.");
-      navigate(-1);
-    } catch (error: unknown) {
-      let message = "Có lỗi xảy ra, vui lòng thử lại.";
-      if (error instanceof Error && error.message) {
-        message = error.message;
+        navigate("/accounts/payment/withdraw/otp", {
+          state: {
+            withdraw: {
+              transactionId: resp.transactionId,
+              maskedEmail: resp.maskedEmail,
+              expireAt: resp.expireAt,
+              amount: numericAmount,
+              accountNumber: account.accountNumber,
+              requiresBiometric: false,
+            },
+          },
+        });
       }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Có lỗi xảy ra, vui lòng thử lại.";
       setErrorMsg(message);
       toast.error(message);
 
@@ -203,13 +169,9 @@ const PaymentAccountWithdraw = () => {
             const remaining = Math.max(0, 5 - failCount);
 
             if (remaining > 0) {
-              toast.error(
-                `Sai mã PIN. Bạn còn ${remaining} lần thử trước khi tài khoản bị tạm khóa.`
-              );
+              toast.error(`Sai mã PIN. Bạn còn ${remaining} lần thử trước khi tài khoản bị tạm khóa.`);
             } else {
-              toast.error(
-                "Bạn đã nhập sai mã PIN quá 5 lần. Tài khoản đã bị tạm khóa."
-              );
+              toast.error("Bạn đã nhập sai mã PIN quá 5 lần. Tài khoản đã bị tạm khóa.");
             }
           }
         } catch (err: unknown) {
@@ -277,29 +239,12 @@ const PaymentAccountWithdraw = () => {
 
             {/* Form rút tiền */}
             <Card className="p-6 space-y-4 max-w-md mx-auto">
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-4"
-                autoComplete="off"
-              >
-                {/* input giả để “hứng” autofill */}
-                <input
-                  type="text"
-                  name="fake-username"
-                  autoComplete="username"
-                  className="hidden"
-                />
-                <input
-                  type="password"
-                  name="fake-password"
-                  autoComplete="new-password"
-                  className="hidden"
-                />
+              <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+                <input type="text" name="fake-username" autoComplete="username" className="hidden" />
+                <input type="password" name="fake-password" autoComplete="new-password" className="hidden" />
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Số tiền rút</label>
-
-                  {/* ✅ FIX: dùng text để hiển thị 1.000.000, vẫn mở bàn phím số */}
                   <input
                     type="text"
                     inputMode="numeric"
@@ -310,14 +255,12 @@ const PaymentAccountWithdraw = () => {
                     onChange={(e) => setAmount(formatVndInput(e.target.value))}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Ví dụ: 1.000.000
+                    Ví dụ: 1.000.000 • Giao dịch ≥ {HIGH_VALUE_THRESHOLD_VND.toLocaleString("vi-VN")} VND cần xác thực sinh trắc
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">
-                    Mã PIN giao dịch
-                  </label>
+                  <label className="text-sm font-medium">Mã PIN giao dịch</label>
                   <input
                     type="password"
                     name="transaction-pin"
@@ -329,16 +272,10 @@ const PaymentAccountWithdraw = () => {
                   />
                 </div>
 
-                {errorMsg && (
-                  <p className="text-xs text-destructive">{errorMsg}</p>
-                )}
+                {errorMsg && <p className="text-xs text-destructive">{errorMsg}</p>}
 
-                <Button
-                  type="submit"
-                  className="w-full rounded-full font-semibold"
-                  disabled={submitting}
-                >
-                  {submitting ? "Đang xử lý..." : "Xác nhận rút tiền"}
+                <Button type="submit" className="w-full rounded-full font-semibold" disabled={submitting}>
+                  {submitting ? "Đang xử lý..." : "Tiếp tục"}
                 </Button>
               </form>
             </Card>

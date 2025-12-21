@@ -23,6 +23,10 @@ export type InitiateTransferResponse = {
   transactionId: string;
   maskedEmail: string;
   expireAt: number;
+  /**
+   * DEV ONLY: dùng để debug khi chưa cấu hình OTP email gateway.
+   * UI sản phẩm nên KHÔNG hiển thị.
+   */
   devOtpCode?: string;
 };
 
@@ -66,8 +70,8 @@ interface RtdbTransaction {
   destAccUid?: string | null;
 
   // ✅ NEW
-  requiresBiometric?: boolean; // lưu để trace, nhưng luôn fallback theo amount nếu missing
-  biometricVerifiedAt?: number | null; // null => chưa sinh trắc
+  requiresBiometric?: boolean;
+  biometricVerifiedAt?: number | null;
 
   [key: string]: unknown;
 }
@@ -98,7 +102,6 @@ type RtdbUserLite = {
   status?: string | null;
   canTransact?: boolean | null;
 
-  // node user của anh có: kycStatus: "VERIFIED" và có thể có ekycStatus
   ekycStatus?: string | null;
   kycStatus?: string | null;
   ekyc_status?: string | null;
@@ -112,9 +115,7 @@ type RtdbUserLite = {
 };
 
 function upper(v: unknown): string {
-  return String(v ?? "")
-    .trim()
-    .toUpperCase();
+  return String(v ?? "").trim().toUpperCase();
 }
 
 function isKycVerified(u: RtdbUserLite): boolean {
@@ -122,12 +123,7 @@ function isKycVerified(u: RtdbUserLite): boolean {
   const s2 = upper(u.kycStatus);
   const s3 = upper(u.ekyc_status);
   const s4 = upper(u.kyc_status);
-  return (
-    s1 === "VERIFIED" ||
-    s2 === "VERIFIED" ||
-    s3 === "VERIFIED" ||
-    s4 === "VERIFIED"
-  );
+  return s1 === "VERIFIED" || s2 === "VERIFIED" || s3 === "VERIFIED" || s4 === "VERIFIED";
 }
 
 function resolveDisplayName(u: RtdbUserLite): string {
@@ -139,15 +135,7 @@ function resolveDisplayName(u: RtdbUserLite): string {
   );
 }
 
-/**
- * ✅ Rule mới theo yêu cầu anh:
- * - User nhận phải eKYC/KYC VERIFIED
- * - User nhận không bị LOCKED
- * - (tuỳ đề) user nhận cũng phải canTransact = true
- */
-async function assertReceiverEligibleOrThrow(
-  receiverUid: string
-): Promise<RtdbUserLite> {
+async function assertReceiverEligibleOrThrow(receiverUid: string): Promise<RtdbUserLite> {
   const userSnap = await get(ref(firebaseRtdb, `users/${receiverUid}`));
   if (!userSnap.exists()) {
     throw new Error("Không tìm thấy thông tin chủ tài khoản thụ hưởng.");
@@ -156,22 +144,15 @@ async function assertReceiverEligibleOrThrow(
   const u = userSnap.val() as RtdbUserLite;
 
   if (upper(u.status) === "LOCKED") {
-    throw new Error(
-      "Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động."
-    );
+    throw new Error("Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động.");
   }
 
   if (!isKycVerified(u)) {
-    throw new Error(
-      "Tài khoản thụ hưởng chưa hoàn tất eKYC, không thể nhận tiền."
-    );
+    throw new Error("Tài khoản thụ hưởng chưa hoàn tất eKYC, không thể nhận tiền.");
   }
 
-  // Nếu anh bắt buộc người nhận cũng phải được bật giao dịch
   if (u.canTransact === false) {
-    throw new Error(
-      "Tài khoản thụ hưởng chưa được bật quyền giao dịch, không thể nhận tiền."
-    );
+    throw new Error("Tài khoản thụ hưởng chưa được bật quyền giao dịch, không thể nhận tiền.");
   }
 
   return u;
@@ -181,8 +162,7 @@ async function assertReceiverEligibleOrThrow(
 
 function requireCurrentUser() {
   const currentUser = firebaseAuth.currentUser;
-  if (!currentUser)
-    throw new Error("Bạn cần đăng nhập để thực hiện giao dịch.");
+  if (!currentUser) throw new Error("Bạn cần đăng nhập để thực hiện giao dịch.");
   return currentUser;
 }
 
@@ -198,14 +178,12 @@ async function generateNextTransactionId(): Promise<string> {
   const counterRef = ref(firebaseRtdb, "counters/transactionCounter");
 
   const result = await runTransaction(counterRef, (current: unknown) => {
-    if (typeof current !== "number" || !Number.isFinite(current) || current < 0)
-      return 1;
+    if (typeof current !== "number" || !Number.isFinite(current) || current < 0) return 1;
     return (current as number) + 1;
   });
 
   let value = result.snapshot.val();
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
-    value = 1;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) value = 1;
 
   return `TXN${String(value).padStart(6, "0")}`;
 }
@@ -218,8 +196,64 @@ function maskEmail(email: string | null | undefined): string {
   return `${local[0]}***${local[local.length - 1]}@${domain}`;
 }
 
-async function sendOtpEmailDev(email: string, otp: string, txnId: string) {
-  console.log(`[DEV] Smart-OTP ${otp} cho ${email} – giao dịch ${txnId}`);
+async function sendOtpEmailDev(email: string, otp: string, txnId: string): Promise<void> {
+  // DEV fallback (khi chưa cấu hình gateway)
+  // eslint-disable-next-line no-console
+  console.log(`[DEV] OTP ${otp} cho ${email} – giao dịch ${txnId}`);
+}
+
+type OtpEmailGatewayRequest = {
+  email: string;
+  otp: string;
+  transactionId: string;
+  purpose: "TRANSFER";
+};
+
+type OtpEmailGatewayResponse = {
+  ok: boolean;
+  error?: string;
+};
+
+/**
+ * ✅ Gửi OTP qua Email gateway (Apps Script Web App).
+ * - Nếu chưa cấu hình URL => fallback DEV để app không crash.
+ */
+async function sendOtpEmail(email: string, otp: string, txnId: string): Promise<void> {
+  const env = import.meta.env as unknown as {
+    VITE_OTP_EMAIL_WEBAPP_URL?: string;
+    VITE_OTP_EMAIL_API_KEY?: string;
+  };
+
+  const url = String(env.VITE_OTP_EMAIL_WEBAPP_URL ?? "").trim();
+  const apiKey = String(env.VITE_OTP_EMAIL_API_KEY ?? "").trim();
+
+  if (!url) {
+    await sendOtpEmailDev(email, otp, txnId);
+    return;
+  }
+
+    const params = new URLSearchParams();
+  params.set("email", email);
+  params.set("otp", otp);
+  params.set("transactionId", txnId);
+  params.set("purpose", "TRANSFER");
+  if (apiKey) params.set("apiKey", apiKey);
+
+  // ✅ no-cors: request vẫn gửi được tới Apps Script, tránh bị browser chặn CORS
+  try {
+    await fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      },
+      body: params.toString(),
+    });
+  } catch {
+    throw new Error("Không gửi được OTP email. Vui lòng thử lại.");
+  }
+  // ⚠️ Vì no-cors => không đọc được response. Nhưng mail vẫn được gửi nếu server OK.
+  return;
 }
 
 function toNumber(v: number | string): number {
@@ -228,9 +262,7 @@ function toNumber(v: number | string): number {
 
 // ===================== NEW: MARK BIOMETRIC =====================
 
-export async function markTransactionBiometricVerified(
-  transactionId: string
-): Promise<void> {
+export async function markTransactionBiometricVerified(transactionId: string): Promise<void> {
   const currentUser = requireCurrentUser();
 
   if (!transactionId) throw new Error("Thiếu mã giao dịch.");
@@ -251,14 +283,11 @@ export async function markTransactionBiometricVerified(
 
   const amount = toNumber(txn.amount);
 
-  // ✅ FIX: nếu txn.requiresBiometric bị missing vẫn bắt theo amount
-  const requiresBiometric =
-    txn.requiresBiometric === true || amount >= HIGH_VALUE_THRESHOLD_VND;
-
+  const requiresBiometric = txn.requiresBiometric === true || amount >= HIGH_VALUE_THRESHOLD_VND;
   if (!requiresBiometric) return;
 
   await update(txnRef, {
-    requiresBiometric: true, // set lại cho chắc
+    requiresBiometric: true,
     biometricVerifiedAt: Date.now(),
   });
 }
@@ -277,88 +306,62 @@ export async function initiateTransferToAccount(
   if (!req.amount || req.amount <= 0) throw new Error("Số tiền không hợp lệ.");
 
   const userSnap = await get(ref(firebaseRtdb, `users/${currentUser.uid}`));
-  if (!userSnap.exists())
-    throw new Error("Không tìm thấy thông tin khách hàng.");
+  if (!userSnap.exists()) throw new Error("Không tìm thấy thông tin khách hàng.");
 
   const profile = userSnap.val() as AppUserProfile;
 
-  if (profile.status === "LOCKED")
-    throw new Error("Tài khoản đăng nhập của bạn đang bị khóa.");
+  if (profile.status === "LOCKED") throw new Error("Tài khoản đăng nhập của bạn đang bị khóa.");
   if (profile.ekycStatus !== "VERIFIED") {
-    throw new Error(
-      "Tài khoản của bạn chưa hoàn tất định danh eKYC, không thể thực hiện giao dịch."
-    );
+    throw new Error("Tài khoản của bạn chưa hoàn tất định danh eKYC, không thể thực hiện giao dịch.");
   }
   if (!profile.canTransact) {
-    throw new Error(
-      "Tài khoản của bạn chưa được bật quyền giao dịch, vui lòng liên hệ ngân hàng."
-    );
+    throw new Error("Tài khoản của bạn chưa được bật quyền giao dịch, vui lòng liên hệ ngân hàng.");
   }
 
-  const sourceAccSnap = await get(
-    ref(firebaseRtdb, `accounts/${req.sourceAccountNumber}`)
-  );
-  if (!sourceAccSnap.exists())
-    throw new Error("Không tìm thấy tài khoản nguồn.");
+  const sourceAccSnap = await get(ref(firebaseRtdb, `accounts/${req.sourceAccountNumber}`));
+  if (!sourceAccSnap.exists()) throw new Error("Không tìm thấy tài khoản nguồn.");
 
   const sourceAcc = sourceAccSnap.val() as RtdbAccount;
 
-  if (sourceAcc.uid !== currentUser.uid)
-    throw new Error("Tài khoản nguồn không thuộc về bạn.");
-  if (sourceAcc.status !== "ACTIVE")
-    throw new Error("Tài khoản nguồn không hoạt động.");
+  if (sourceAcc.uid !== currentUser.uid) throw new Error("Tài khoản nguồn không thuộc về bạn.");
+  if (sourceAcc.status !== "ACTIVE") throw new Error("Tài khoản nguồn không hoạt động.");
 
   const balance = toNumber(sourceAcc.balance);
   if (balance < req.amount) throw new Error("Số dư tài khoản nguồn không đủ.");
 
   if (req.sourceAccountNumber === req.destinationAccountNumber) {
-    throw new Error(
-      "Bạn không thể chuyển tiền tới cùng một tài khoản nguồn trong chức năng này."
-    );
+    throw new Error("Bạn không thể chuyển tiền tới cùng một tài khoản nguồn trong chức năng này.");
   }
 
   const isInternal =
-    req.bankName === "VietBank" ||
-    req.bankCode === "VIETBANK" ||
-    req.bankCode === "VietBank";
+    req.bankName === "VietBank" || req.bankCode === "VIETBANK" || req.bankCode === "VietBank";
 
   let destAccUid: string | null = null;
   let externalDest: ExternalAccount | null = null;
 
   if (isInternal) {
-    const destSnap = await get(
-      ref(firebaseRtdb, `accounts/${req.destinationAccountNumber}`)
-    );
+    const destSnap = await get(ref(firebaseRtdb, `accounts/${req.destinationAccountNumber}`));
     if (!destSnap.exists())
       throw new Error("Không tìm thấy tài khoản nhận trong hệ thống VietBank.");
 
     const destAcc = destSnap.val() as RtdbAccount;
 
-    // ✅ Rule 1: account nhận phải ACTIVE
     if (upper(destAcc.status) !== "ACTIVE") {
-      throw new Error(
-        "Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động."
-      );
+      throw new Error("Tài khoản thụ hưởng đang bị tạm khóa hoặc không hoạt động.");
     }
 
-    // ✅ Rule: không cho chuyển tới chính mình
     if (destAcc.uid === currentUser.uid) {
-      throw new Error(
-        "Không thể chuyển tiền tới tài khoản của chính bạn trong chức năng này."
-      );
+      throw new Error("Không thể chuyển tiền tới tài khoản của chính bạn trong chức năng này.");
     }
 
-    // ✅ Rule 2: user nhận phải eKYC VERIFIED (+ optional canTransact)
     const receiverUid = String(destAcc.uid ?? "").trim();
     if (!receiverUid) {
       throw new Error("Tài khoản thụ hưởng không hợp lệ (thiếu uid).");
     }
 
     const receiverProfile = await assertReceiverEligibleOrThrow(receiverUid);
-
     destAccUid = receiverUid;
 
-    // ✅ Nếu UI chưa truyền destinationName => service tự set cho chắc
     const receiverName = resolveDisplayName(receiverProfile);
     if (!req.destinationName || !req.destinationName.trim()) {
       req.destinationName = receiverName || req.destinationAccountNumber;
@@ -370,9 +373,7 @@ export async function initiateTransferToAccount(
     );
     const extSnap = await get(extRef);
     if (!extSnap.exists()) {
-      throw new Error(
-        `Không tìm thấy tài khoản nhận tại ngân hàng ${req.bankName}.`
-      );
+      throw new Error(`Không tìm thấy tài khoản nhận tại ngân hàng ${req.bankName}.`);
     }
 
     const extAcc = extSnap.val() as ExternalAccount;
@@ -395,8 +396,7 @@ export async function initiateTransferToAccount(
     customerUid: currentUser.uid,
     sourceAccountNumber: req.sourceAccountNumber,
     destinationAccountNumber: req.destinationAccountNumber,
-    destinationName:
-      req.destinationName ?? externalDest?.fullName ?? externalDest?.name ?? "",
+    destinationName: req.destinationName ?? externalDest?.fullName ?? externalDest?.name ?? "",
     destinationBankName: req.bankName,
     destinationBankCode: req.bankCode ?? "",
     amount: req.amount,
@@ -406,8 +406,6 @@ export async function initiateTransferToAccount(
     executedAt: null,
     isInternal,
     destAccUid,
-
-    // ✅ NEW
     requiresBiometric,
     biometricVerifiedAt: null,
   };
@@ -415,13 +413,15 @@ export async function initiateTransferToAccount(
   await set(ref(firebaseRtdb, `transactions/${txnId}`), transactionData);
 
   const otpCode = generateOtpCode(6);
-  const expireMs = 2 * 60 * 1000;
-  const expireAt = now + expireMs;
+  const expireAt = now + 2 * 60 * 1000;
+
+  const email = String(profile.email ?? "").trim();
+  if (!email) throw new Error("Tài khoản của bạn chưa có email để nhận OTP.");
 
   const otpData: RtdbOtpData = {
     transactionId: txnId,
     uid: currentUser.uid,
-    email: profile.email,
+    email,
     otp: otpCode,
     createdAt: now,
     expireAt,
@@ -430,41 +430,104 @@ export async function initiateTransferToAccount(
   };
 
   await set(ref(firebaseRtdb, `transactionOtps/${txnId}`), otpData);
-  await sendOtpEmailDev(profile.email, otpCode, txnId);
+
+  // ✅ Gửi OTP qua Email gateway (Apps Script). Nếu chưa cấu hình thì fallback DEV log.
+  await sendOtpEmail(email, otpCode, txnId);
 
   if (req.saveRecipient) {
-    const recipientKey = `${req.bankCode ?? req.bankName}_${
-      req.destinationAccountNumber
-    }`;
+    const recipientKey = `${req.bankCode ?? req.bankName}_${req.destinationAccountNumber}`;
 
     const realName =
-      (req.destinationName && req.destinationName.trim()) ||
-      externalDest?.fullName ||
-      externalDest?.name ||
-      "";
+      (req.destinationName && req.destinationName.trim()) || externalDest?.fullName || externalDest?.name || "";
 
     const nickname = req.nickname?.trim() || "";
 
-    await set(
-      ref(firebaseRtdb, `savedRecipients/${currentUser.uid}/${recipientKey}`),
-      {
-        name: realName,
-        accountNumber: req.destinationAccountNumber,
-        bankName: req.bankName,
-        bankCode: req.bankCode ?? "",
-        nickname,
-        updatedAt: now,
-      }
-    );
+    await set(ref(firebaseRtdb, `savedRecipients/${currentUser.uid}/${recipientKey}`), {
+      name: realName,
+      accountNumber: req.destinationAccountNumber,
+      bankName: req.bankName,
+      bankCode: req.bankCode ?? "",
+      nickname,
+      updatedAt: now,
+    });
   }
+
+  const maskedEmail = maskEmail(email);
 
   return {
     transactionId: txnId,
-    maskedEmail: maskEmail(profile.email),
+    maskedEmail,
     expireAt,
+    // DEV ONLY: vẫn trả về để không làm hư các màn hình đang show SmartOTP
     devOtpCode: otpCode,
   };
 }
+
+export async function resendTransferOtp(
+  transactionId: string
+): Promise<{ maskedEmail: string; expireAt: number }> {
+  const currentUser = requireCurrentUser();
+  if (!transactionId) throw new Error("Thiếu mã giao dịch.");
+
+  // 1) Transaction phải còn PENDING_OTP
+  const txnRef = ref(firebaseRtdb, `transactions/${transactionId}`);
+  const txnSnap = await get(txnRef);
+  if (!txnSnap.exists()) throw new Error("Không tìm thấy giao dịch.");
+
+  const txn = txnSnap.val() as RtdbTransaction;
+  if (txn.customerUid !== currentUser.uid) {
+    throw new Error("Bạn không có quyền thao tác giao dịch này.");
+  }
+  if (txn.status !== "PENDING_OTP") {
+    throw new Error("Giao dịch không còn ở trạng thái chờ OTP.");
+  }
+
+  // 2) Đọc OTP hiện tại
+  const otpRef = ref(firebaseRtdb, `transactionOtps/${transactionId}`);
+  const otpSnap = await get(otpRef);
+
+  if (!otpSnap.exists()) {
+    throw new Error("Không tìm thấy OTP hiện tại cho giao dịch này.");
+  }
+
+  const otpData = otpSnap.val() as RtdbOtpData;
+
+  if (otpData.uid !== currentUser.uid) {
+    throw new Error("Bạn không có quyền xác nhận giao dịch này.");
+  }
+  if (otpData.used) {
+    throw new Error("OTP đã được sử dụng. Vui lòng tạo giao dịch mới nếu cần.");
+  }
+
+  const now = Date.now();
+
+  // ✅ RÀNG BUỘC CHÍNH: chỉ cho gửi lại khi OTP đã hết hạn
+  if (now < otpData.expireAt) {
+    const remainSec = Math.max(1, Math.ceil((otpData.expireAt - now) / 1000));
+    throw new Error(`OTP hiện tại vẫn còn hiệu lực. Vui lòng chờ ${remainSec} giây để gửi lại.`);
+  }
+
+  // 3) OTP hết hạn -> tạo OTP mới + gửi email
+  const newOtp = generateOtpCode(6);
+  const newExpireAt = now + 2 * 60 * 1000;
+
+  const updatedOtp: RtdbOtpData = {
+    transactionId,
+    uid: currentUser.uid,
+    email: otpData.email,
+    otp: newOtp,
+    createdAt: now,
+    expireAt: newExpireAt,
+    attemptsLeft: 5,
+    used: false,
+  };
+
+  await set(otpRef, updatedOtp);
+  await sendOtpEmail(otpData.email, newOtp, transactionId);
+
+  return { maskedEmail: maskEmail(otpData.email), expireAt: newExpireAt };
+}
+
 
 export async function confirmTransferWithOtp(
   transactionId: string,
@@ -472,72 +535,53 @@ export async function confirmTransferWithOtp(
 ): Promise<ConfirmTransferResponse> {
   const currentUser = requireCurrentUser();
 
-  if (!transactionId || !otpInput)
-    throw new Error("Thiếu mã giao dịch hoặc OTP.");
+  if (!transactionId || !otpInput) throw new Error("Thiếu mã giao dịch hoặc OTP.");
 
-  // ✅ 1) Đọc transaction trước để CHẶN sinh trắc (fail-closed)
   const txnRef = ref(firebaseRtdb, `transactions/${transactionId}`);
   const txnSnap = await get(txnRef);
   if (!txnSnap.exists()) throw new Error("Không tìm thấy giao dịch.");
 
   const txn = txnSnap.val() as RtdbTransaction;
 
-  if (txn.status !== "PENDING_OTP")
-    throw new Error("Giao dịch đã được xử lý trước đó.");
-  if (txn.customerUid !== currentUser.uid)
-    throw new Error("Bạn không có quyền xác nhận giao dịch này.");
+  if (txn.status !== "PENDING_OTP") throw new Error("Giao dịch đã được xử lý trước đó.");
+  if (txn.customerUid !== currentUser.uid) throw new Error("Bạn không có quyền xác nhận giao dịch này.");
 
   const amount = toNumber(txn.amount);
 
-  // ✅ FIX: nếu requiresBiometric missing vẫn bắt theo amount >= 10tr
-  const requiresBiometric =
-    txn.requiresBiometric === true || amount >= HIGH_VALUE_THRESHOLD_VND;
-
+  const requiresBiometric = txn.requiresBiometric === true || amount >= HIGH_VALUE_THRESHOLD_VND;
   const biometricVerifiedAt = txn.biometricVerifiedAt ?? null;
 
   if (requiresBiometric && !biometricVerifiedAt) {
-    throw new Error(
-      "Giao dịch giá trị cao: bạn cần xác thực sinh trắc trước khi hoàn tất."
-    );
+    throw new Error("Giao dịch giá trị cao: bạn cần xác thực sinh trắc trước khi hoàn tất.");
   }
 
-  // ✅ 2) Kiểm tra OTP
   const otpRef = ref(firebaseRtdb, `transactionOtps/${transactionId}`);
   const otpSnap = await get(otpRef);
-  if (!otpSnap.exists())
-    throw new Error("Không tìm thấy yêu cầu OTP cho giao dịch này.");
+  if (!otpSnap.exists()) throw new Error("Không tìm thấy yêu cầu OTP cho giao dịch này.");
 
   const otpData = otpSnap.val() as RtdbOtpData;
 
-  if (otpData.uid !== currentUser.uid)
-    throw new Error("Bạn không có quyền xác nhận giao dịch này.");
+  if (otpData.uid !== currentUser.uid) throw new Error("Bạn không có quyền xác nhận giao dịch này.");
   if (otpData.used) throw new Error("OTP đã được sử dụng.");
 
   const now = Date.now();
-  if (now > otpData.expireAt)
-    throw new Error("OTP đã hết hạn, vui lòng tạo giao dịch mới.");
-  if (otpData.attemptsLeft <= 0)
-    throw new Error("Bạn đã nhập sai OTP quá số lần cho phép.");
+  if (now > otpData.expireAt) throw new Error("OTP đã hết hạn, vui lòng tạo giao dịch mới.");
+  if (otpData.attemptsLeft <= 0) throw new Error("Bạn đã nhập sai OTP quá số lần cho phép.");
 
   if (otpData.otp !== otpInput) {
     await update(otpRef, { attemptsLeft: otpData.attemptsLeft - 1 });
-    throw new Error(
-      `Mã OTP không chính xác. Bạn còn ${otpData.attemptsLeft - 1} lần thử.`
-    );
+    throw new Error(`Mã OTP không chính xác. Bạn còn ${otpData.attemptsLeft - 1} lần thử.`);
   }
 
-  // ✅ OTP đúng => đánh dấu used
   await update(otpRef, { used: true });
 
-  // ✅ 3) Thực hiện trừ/cộng tiền
   const sourceAccNumber = txn.sourceAccountNumber;
   const destAccNumber = txn.destinationAccountNumber;
   const destBankName = txn.destinationBankName;
 
   const isInternal = Boolean(txn.isInternal);
 
-  if (!sourceAccNumber || amount <= 0)
-    throw new Error("Dữ liệu giao dịch không hợp lệ.");
+  if (!sourceAccNumber || amount <= 0) throw new Error("Dữ liệu giao dịch không hợp lệ.");
 
   let senderName: string | null = null;
   try {
@@ -551,13 +595,13 @@ export async function confirmTransferWithOtp(
       senderName = p.fullName ?? p.username ?? p.displayName ?? null;
     }
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.error("Lỗi đọc thông tin người gửi để tạo thông báo:", err);
   }
 
   const sourceAccRef = ref(firebaseRtdb, `accounts/${sourceAccNumber}`);
   const sourceAccSnapBefore = await get(sourceAccRef);
-  if (!sourceAccSnapBefore.exists())
-    throw new Error("Không tìm thấy tài khoản nguồn.");
+  if (!sourceAccSnapBefore.exists()) throw new Error("Không tìm thấy tài khoản nguồn.");
 
   let newSourceBalance = 0;
 
@@ -581,9 +625,7 @@ export async function confirmTransferWithOtp(
   const afterSource = afterSourceSnap.val() as RtdbAccountMutable | null;
   if (afterSource && afterSource.__insufficient) {
     await update(sourceAccRef, { __insufficient: null });
-    throw new Error(
-      "Số dư tài khoản nguồn không đủ (có thể đã thay đổi trong lúc xử lý)."
-    );
+    throw new Error("Số dư tài khoản nguồn không đủ (có thể đã thay đổi trong lúc xử lý).");
   }
 
   let newDestBalance: number | null = null;
@@ -602,7 +644,6 @@ export async function confirmTransferWithOtp(
     });
   }
 
-  // ✅ 4) SUCCESS
   await update(txnRef, { status: "SUCCESS", executedAt: now });
 
   const historyItem = {
@@ -620,30 +661,18 @@ export async function confirmTransferWithOtp(
   const historyPromises: Promise<void>[] = [];
 
   historyPromises.push(
-    set(
-      ref(
-        firebaseRtdb,
-        `accountTransactions/${sourceAccNumber}/${transactionId}`
-      ),
-      {
-        ...historyItem,
-        direction: "OUT",
-      }
-    ).then(() => undefined)
+    set(ref(firebaseRtdb, `accountTransactions/${sourceAccNumber}/${transactionId}`), {
+      ...historyItem,
+      direction: "OUT",
+    }).then(() => undefined)
   );
 
   if (isInternal && destAccNumber) {
     historyPromises.push(
-      set(
-        ref(
-          firebaseRtdb,
-          `accountTransactions/${destAccNumber}/${transactionId}`
-        ),
-        {
-          ...historyItem,
-          direction: "IN",
-        }
-      ).then(() => undefined)
+      set(ref(firebaseRtdb, `accountTransactions/${destAccNumber}/${transactionId}`), {
+        ...historyItem,
+        direction: "IN",
+      }).then(() => undefined)
     );
   }
 
@@ -651,28 +680,24 @@ export async function confirmTransferWithOtp(
 
   const notificationsPromises: Promise<void>[] = [];
 
-  const destDisplayName =
-    txn.destinationName || destAccNumber || "tài khoản khác";
+  const destDisplayName = txn.destinationName || destAccNumber || "tài khoản khác";
   const senderTitle = `Chuyển tiền đến ${destDisplayName}`;
-  const senderMessage = `Đã chuyển ${amount.toLocaleString(
-    "vi-VN"
-  )} VND đến ${destDisplayName}${destBankName ? ` (${destBankName})` : ""}.`;
+  const senderMessage = `Đã chuyển ${amount.toLocaleString("vi-VN")} VND đến ${destDisplayName}${
+    destBankName ? ` (${destBankName})` : ""
+  }.`;
 
   notificationsPromises.push(
-    set(
-      ref(firebaseRtdb, `notifications/${currentUser.uid}/${transactionId}`),
-      {
-        type: "BALANCE_CHANGE",
-        direction: "OUT",
-        title: senderTitle,
-        message: senderMessage,
-        amount,
-        accountNumber: sourceAccNumber,
-        balanceAfter: newSourceBalance,
-        transactionId,
-        createdAt: now,
-      }
-    ).then(() => undefined)
+    set(ref(firebaseRtdb, `notifications/${currentUser.uid}/${transactionId}`), {
+      type: "BALANCE_CHANGE",
+      direction: "OUT",
+      title: senderTitle,
+      message: senderMessage,
+      amount,
+      accountNumber: sourceAccNumber,
+      balanceAfter: newSourceBalance,
+      transactionId,
+      createdAt: now,
+    }).then(() => undefined)
   );
 
   const receiverUid = txn.destAccUid;

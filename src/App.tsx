@@ -6,6 +6,10 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useParams } from "react-router-dom";
 import type { UtilityType } from "@/pages/utilities/utilityTypes";
 import DevSeedOfficersPage from "@/pages/DevSeedOfficers";
+import PaymentWithdrawOtpConfirm from "@/pages/PaymentWithdrawOtpConfirm";
+import PaymentWithdrawBiometricConfirm from "@/pages/PaymentWithdrawBiometricConfirm";
+import SavingWithdrawOtpConfirm from "@/pages/SavingWithdrawOtpConfirm";
+
 
 // ✅ [PATCH-ADD-TRANSFER-BIOMETRIC] thêm từ code (2)
 import TransferBiometricConfirm from "@/pages/TransferBiometricConfirm";
@@ -26,16 +30,18 @@ import NotFound from "@/pages/NotFound";
 import Home from "@/pages/Home";
 import Transfer from "@/pages/Transfer";
 import TransferToAccount from "@/pages/TransferToAccount";
-import TransferToCard from "@/pages/TransferToCard";
 import TransferToMyAccount from "@/pages/TransferToMyAccount";
-import TransferToMyAccountConfirm from "@/pages/TransferToMyAccountConfirm";
+
 import TransferReceipt from "@/pages/TransferReceipt";
-import TransferInternational from "@/pages/TransferInternational";
+
 
 import Accounts from "@/pages/Accounts";
 import PaymentAccountDetail from "@/pages/PaymentAccountDetail";
 import SavingsAccountDetail from "@/pages/SavingsAccountDetail";
 import MortgageAccountDetail from "@/pages/MortgageAccountDetail";
+import MortgageInterestOtpConfirm from "@/pages/MortgageInterestOtpConfirm";
+
+
 
 import Notifications from "@/pages/Notifications";
 import QRScanner from "@/pages/QRScanner";
@@ -123,42 +129,10 @@ const App = () => (
               </>
             }
           />
-          <Route
-            path="/transfer/card"
-            element={
-              <>
-                <TransferToCard />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/transfer/self"
-            element={
-              <>
-                <TransferToMyAccount />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/transfer/self/confirm"
-            element={
-              <>
-                <TransferToMyAccountConfirm />
-                <BottomNav />
-              </>
-            }
-          />
-          <Route
-            path="/transfer/international"
-            element={
-              <>
-                <TransferInternational />
-                <BottomNav />
-              </>
-            }
-          />
+          
+          
+          
+         
           <Route
             path="/transfer/result"
             element={
@@ -378,6 +352,10 @@ const App = () => (
             path="/utilities/hotel-booking"
             element={<Navigate to="/utilities/hotel" replace />}
           />
+          <Route path="/mortgage-interest-otp-confirm" element={<MortgageInterestOtpConfirm />} />
+
+
+          
 
           {/* Officer area */}
           <Route path="/officer" element={<OfficerDashboard />} />
@@ -395,16 +373,26 @@ const App = () => (
             element={<OfficerAccountCreatePage />}
           />
           <Route
+          path="/saving-withdraw-otp-confirm"
+          element={<SavingWithdrawOtpConfirm />}
+        />
+          <Route
             path="/officer/accounts/:accountId"
             element={<OfficerAccountDetailPage />}
           />
+          <Route path="/accounts/mortgage/interest/otp" element={<MortgageInterestOtpConfirm />} />
+
           <Route path="/officer/rates" element={<OfficerRatesPage />} />
           <Route
             path="/officer/transactions"
             element={<OfficerTransactionsPage />}
           />
+          <Route path="/saving-withdraw-otp-confirm" element={<SavingWithdrawOtpConfirm />} />
+          
           <Route path="/officer/ekyc" element={<OfficerEKYCPage />} />
           <Route path="/officer/ekyc/:id" element={<OfficerEKYCDetailPage />} />
+           <Route path="/accounts/payment/withdraw/biometric" element={<PaymentWithdrawBiometricConfirm />} />
+           <Route path="/accounts/payment/withdraw/otp" element={<PaymentWithdrawOtpConfirm />} />
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>
