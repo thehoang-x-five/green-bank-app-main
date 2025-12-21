@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "utilityTransactions": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["userId", "type", "createdAt"]
+    },
+    "notifications": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid",
+        ".indexOn": ["createdAt", "type"]
+      }
+    },
+    "accounts": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$accountId": {
+        ".read": "auth != null && data.child('uid').val() === auth.uid",
+        ".write": "auth != null && data.child('uid').val() === auth.uid"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    }
+  }
+}

@@ -1,9 +1,8 @@
-// src/pages/utilities/UtilityDataPack.tsx
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Phone, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -89,8 +88,6 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
 
   // ✅ Mua 3G/4G (riêng) là entry=mobile3g4g
   const isMua3G4G = entry === "mobile3g4g";
-
-  const [openTelco, setOpenTelco] = useState(false);
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -318,31 +315,18 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                     onChange={(e) => onChangePhone(e.target.value)}
                     placeholder="Nhập số điện thoại"
                     inputMode="numeric"
-                    className="h-11 pr-20"
+                    className="h-11 pr-10"
                   />
 
                   {formData.dataPhone?.length > 0 && (
                     <button
                       type="button"
-                      className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       onClick={() => onChangePhone("")}
                     >
                       <X className="w-4 h-4" />
                     </button>
                   )}
-
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-center hover:bg-emerald-100"
-                    onClick={() =>
-                      toast.message("Demo", {
-                        description: "Mở danh bạ (demo)",
-                      })
-                    }
-                    aria-label="Chọn từ danh bạ"
-                  >
-                    <Phone className="w-4 h-4 text-emerald-700" />
-                  </button>
                 </div>
               </div>
 
@@ -352,12 +336,7 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                   Nhà mạng <span className="text-red-500">*</span>
                 </Label>
 
-                <button
-                  type="button"
-                  onClick={() => setOpenTelco(true)}
-                  className="w-full h-11 rounded-xl border px-4 flex items-center justify-between hover:bg-muted/30"
-                >
-                  {/* ✅ text-sm giống input */}
+                <div className="w-full h-11 rounded-xl border px-4 flex items-center justify-between bg-muted/30">
                   <span
                     className={`text-sm ${
                       canShowTelco ? "text-foreground" : "text-muted-foreground"
@@ -365,8 +344,7 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                   >
                     {telcoLabel}
                   </span>
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                </button>
+                </div>
               </div>
 
               {/* Gói cước */}
@@ -431,40 +409,6 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
               </div>
             </Card>
           </div>
-
-          {/* Telco modal (demo) */}
-          {openTelco && (
-            <div className="fixed inset-0 z-40 bg-black/30 flex items-end justify-center">
-              <div className="w-full max-w-2xl bg-background rounded-t-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="font-bold">Chọn nhà mạng</p>
-                  <button
-                    type="button"
-                    className="rounded-full p-2 hover:bg-muted"
-                    onClick={() => setOpenTelco(false)}
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {["VIETTEL", "VINAPHONE", "MOBIFONE"].map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    className="w-full flex items-center justify-between rounded-xl border px-4 py-3 hover:bg-muted/30"
-                    onClick={() => {
-                      toast.message("Demo", {
-                        description: `Chọn ${name} (demo)`,
-                      });
-                      setOpenTelco(false);
-                    }}
-                  >
-                    <span className="font-semibold">{name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ✅ [PATCH-MUA3G4G-CONTINUE-BUTTON] Nút Tiếp tục chỉ hiện khi đã chọn gói */}
@@ -787,28 +731,17 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                   onChange={(e) => onChangePhone(e.target.value)}
                   placeholder="Nhập số điện thoại (VD: 0862525038)"
                   inputMode="numeric"
-                  className="h-11 pr-20"
+                  className="h-11 pr-10"
                 />
                 {formData.dataPhone?.length > 0 && (
                   <button
                     type="button"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     onClick={() => onChangePhone("")}
                   >
                     <X className="w-4 h-4" />
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-center hover:bg-emerald-100"
-                  onClick={() =>
-                    toast.message("Demo", { description: "Mở danh bạ (demo)" })
-                  }
-                  aria-label="Chọn từ danh bạ"
-                >
-                  <Phone className="w-4 h-4 text-emerald-700" />
-                </button>
               </div>
             </div>
           </div>
@@ -920,28 +853,17 @@ export default function UtilityDataPack({ formData, setFormData }: Props) {
                   onChange={(e) => onChangeTopupPhone(e.target.value)}
                   placeholder="Nhập số điện thoại (VD: 0862525038)"
                   inputMode="numeric"
-                  className="h-11 pr-20"
+                  className="h-11 pr-10"
                 />
                 {formData.phoneNumber?.length > 0 && (
                   <button
                     type="button"
-                    className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     onClick={() => onChangeTopupPhone("")}
                   >
                     <X className="w-4 h-4" />
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-center hover:bg-emerald-100"
-                  onClick={() =>
-                    toast.message("Demo", { description: "Mở danh bạ (demo)" })
-                  }
-                  aria-label="Chọn từ danh bạ"
-                >
-                  <Phone className="w-4 h-4 text-emerald-700" />
-                </button>
               </div>
             </div>
           </div>
